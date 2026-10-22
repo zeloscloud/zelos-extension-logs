@@ -33,5 +33,6 @@ python_version = "3.11"
 grace_seconds = 5
 
 [package]
-# assets/readme: an installed copy shows the README's pictures from the package, not from GitHub.
-paths = ["main.py", "zelos_extension_logs", "LICENSE", "assets/readme"]
+# docs and assets/readme: an installed copy opens the README's reference and pictures from the
+# package, not from GitHub.
+paths = ["main.py", "zelos_extension_logs", "docs", "LICENSE", "assets/readme"]
