@@ -8,6 +8,11 @@ from zelos_log_lines.formats.syslog import journal_field
 
 from .probe import Probe
 
+# Two clocks on NTP, or on crystals within ±100 ppm, run at most 200 ppm apart.
+_DRIFT_PPM = 200
+# journald reads an entry's two clocks one after the other.
+_SAME_GAP_NS = 1_000_000
+
 
 @dataclass(frozen=True, slots=True)
 class Entry:
@@ -45,24 +50,42 @@ class Placement:
 
     An entry from an earlier boot, which a resume can bring, has no live mapping: it takes its
     wall-clock stamp, shifted by how far the board's clock was from this computer's at the probe.
+
+    A boot's wall clock less its monotonic clock changes only when the board suspends or its wall
+    clock steps. When it grows, the monotonic clock fell behind, and the boot's mapping starts over.
     """
 
     def __init__(self, probe: Probe | None) -> None:
         self._probe = probe
         self._clocks: dict[str, DeviceClock] = {}
+        self._gaps: dict[str, int] = {}
 
     def place(self, entry: Entry, host_ns: int) -> int:
         clock = self._clocks.get(entry.boot_id)
         if clock is None:
             if entry.monotonic_ns is None or not self._live(entry.boot_id):
                 return self._wall_clock(entry, host_ns)
-            clock = self._clocks[entry.boot_id] = DeviceClock()
-            probe = self._probe
-            if probe is not None and probe.boot_id == entry.boot_id and probe.uptime_ns:
-                clock.seed(probe.host_ns, probe.uptime_ns)
+            clock = self._start(entry.boot_id)
         if entry.monotonic_ns is None:
             return host_ns
+        if self._fell_behind(entry):
+            clock = self._start(entry.boot_id)
         return clock.map(host_ns, entry.monotonic_ns)[0]
+
+    def _start(self, boot_id: str) -> DeviceClock:
+        clock = self._clocks[boot_id] = DeviceClock(drift_ppm=_DRIFT_PPM)
+        probe = self._probe
+        if probe is not None and probe.boot_id == boot_id and probe.uptime_ns:
+            clock.seed(probe.host_ns, probe.uptime_ns)
+        return clock
+
+    def _fell_behind(self, entry: Entry) -> bool:
+        if entry.realtime_ns is None or entry.monotonic_ns is None:
+            return False
+        gap = entry.realtime_ns - entry.monotonic_ns
+        last = self._gaps.get(entry.boot_id)
+        self._gaps[entry.boot_id] = gap
+        return last is not None and gap > last + _SAME_GAP_NS
 
     def _live(self, boot_id: str) -> bool:
         # The boot the probe saw, or one that started since: entries arrive as they are written.

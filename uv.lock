@@ -714,7 +714,7 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4" },
     { name = "platformdirs", marker = "sys_platform == 'win32'", specifier = ">=4" },
     { name = "tzdata", marker = "sys_platform == 'win32'" },
-    { name = "zelos-log-lines", specifier = ">=0.1,<0.2" },
+    { name = "zelos-log-lines", specifier = ">=0.1.1,<0.2" },
     { name = "zelos-sdk", specifier = ">=0.0.12,<0.1" },
 ]
 
@@ -730,15 +730,15 @@ dev = [
 
 [[package]]
 name = "zelos-log-lines"
-version = "0.1.0"
+version = "0.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "backports-zstd", marker = "python_full_version < '3.14'" },
     { name = "zelos-sdk" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/14/8c/487ae2bec37be99073405e09302188245b65f74ddea948bfdc75e90cd434/zelos_log_lines-0.1.0.tar.gz", hash = "sha256:4b605fb32f21134d3f7e187b65f8b10bc1a5c42f0a016f156325448d8b9b766f", size = 277510, upload-time = "2026-10-22T14:58:32.997Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b8/b9/1a9ed8ff42658e188abdacadd76a9af436f0e0c21b0a2dbd7deb4bf65f14/zelos_log_lines-0.1.1.tar.gz", hash = "sha256:51b56a7b566f7d0cb94f0289383f6022bf9eb650417981e2e449158cdf77bafb", size = 278589, upload-time = "2026-10-22T21:39:48.117Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b9/a3/4c77a6c34c89deff8f89b5a9b393d682598670f4659c5c5f6d926d18c057/zelos_log_lines-0.1.0-py3-none-any.whl", hash = "sha256:aa117976b77cb126e2d34bfa32025c9773e5710231bde50cdb6a4178b0fb2e24", size = 70024, upload-time = "2026-10-22T14:58:31.575Z" },
+    { url = "https://files.pythonhosted.org/packages/06/64/fd2c3fd5ddbb6770d5fb68c0ae281d507ce605801061df2b5160ef5d30ac/zelos_log_lines-0.1.1-py3-none-any.whl", hash = "sha256:d02c634f5ddd2796c770e141f002b17488ed903004103bbcc01c13f034f50f66", size = 70732, upload-time = "2026-10-22T21:39:46.673Z" },
 ]
 
 [[package]]

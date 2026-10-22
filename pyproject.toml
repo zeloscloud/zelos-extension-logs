@@ -16,7 +16,7 @@ classifiers = [
 ]
 dependencies = [
     "zelos-sdk>=0.0.12,<0.1",
-    "zelos-log-lines>=0.1,<0.2",
+    "zelos-log-lines>=0.1.1,<0.2",
     "jsonschema>=4",
     # zoneinfo reads IANA zones from the system, and Windows has none.
     "tzdata; sys_platform == 'win32'",

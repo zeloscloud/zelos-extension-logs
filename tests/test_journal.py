@@ -164,7 +164,8 @@ class TestPlacement:
 
         assert late == 1005 * S
         assert early == 1007 * S + 800_000_000
-        assert after == 1008 * S + 800_000_000
+        # 1.2 s on, the earlier offset allows for 200 ppm of drift: 240 µs.
+        assert after == 1008 * S + 800_240_000
 
     def test_a_board_whose_wall_clock_reads_1970_still_lines_up(self) -> None:
         placement = Placement(board(clock_s=40))
@@ -243,6 +244,41 @@ class TestPlacement:
         placed = [placement.place(entry_at(m), 1000 * S) for m in (1, 2, 3)]
 
         assert placed == [1000 * S] * 3
+
+    def test_a_quiet_entry_is_placed_by_the_last_prompt_one(self) -> None:
+        placement = Placement(None)
+        placement.place(entry_at(100), 5000 * S)
+
+        # A minute on, an entry journald delivered 0.4 s late; 200 ppm of 60.4 s is 12.08 ms.
+        assert placement.place(entry_at(160), 5060 * S + 400_000_000) == 5060 * S + 12_080_000
+
+    def test_after_the_board_suspends_entries_are_placed_as_they_arrive(self) -> None:
+        placement = Placement(None)
+        placement.place(entry_at(100, real_s=1000), 5000 * S)
+
+        # Suspended for 10 s: the wall clock moved 11 s, the monotonic clock 1 s.
+        placed = placement.place(entry_at(101, real_s=1011), 5011 * S + 400_000_000)
+
+        assert placed == 5011 * S + 400_000_000
+
+    def test_a_wall_clock_stepped_back_keeps_the_mapping(self) -> None:
+        placement = Placement(None)
+        placement.place(entry_at(100, real_s=1000), 5000 * S)
+
+        placed = placement.place(entry_at(101, real_s=990), 5001 * S + 400_000_000)
+
+        assert placed == 5001 * S + 280_000
+
+    def test_a_wall_clock_step_in_the_history_keeps_the_probes_placement(self) -> None:
+        placement = Placement(board())
+
+        # NTP set the board's clock an hour forward between the first two entries.
+        placed = [
+            placement.place(entry_at(mono, real_s=real), 1000 * S + 20_000_000)
+            for mono, real in ((100, 10_000), (300, 10_200 + 3600), (499.9, 10_399.9 + 3600))
+        ]
+
+        assert placed == [600 * S, 800 * S, int(999.9 * S)]
 
     def test_boots_do_not_share_a_clock(self) -> None:
         placement = Placement(None)
