@@ -90,6 +90,17 @@ class TestEnsure:
 
         assert (tmp_path / "data" / "nested" / "ssh" / "id_ed25519").is_file()
 
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows' OpenSSH needs it")
+    def test_made_without_programdata_as_the_agent_starts_an_extension(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("PROGRAMDATA", raising=False)
+
+        key = keys.ensure(tmp_path)
+
+        assert key.is_file()
+        assert key.with_suffix(".pub").is_file()
+
     def test_no_data_directory_is_an_error(self) -> None:
         with pytest.raises(KeyFailure) as caught:
             keys.ensure(None)

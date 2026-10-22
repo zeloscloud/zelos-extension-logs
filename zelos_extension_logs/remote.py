@@ -118,11 +118,25 @@ def local_argv(command: str) -> list[str] | str:
     return ["/bin/sh", "-c", command]
 
 
+def child_env() -> dict[str, str] | None:
+    """The environment of a process this extension starts, or None for the extension's own.
+
+    Windows' OpenSSH reads its settings from PROGRAMDATA and exits 255 without a word when it is
+    missing, as it is in the environment a Zelos agent gives its extensions.
+    """
+    if sys.platform != "win32" or "PROGRAMDATA" in os.environ:
+        return None
+    from platformdirs.windows import Windows
+
+    return {**os.environ, "PROGRAMDATA": Windows().site_data_dir}
+
+
 def popen(argv: list[str] | str, **kwargs: object) -> subprocess.Popen[bytes]:
     """Start a process in its own group, so stopping it stops what it started."""
     if sys.platform == "win32":
         flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
-        return subprocess.Popen(argv, shell=isinstance(argv, str), creationflags=flags, **kwargs)  # type: ignore[call-overload]
+        shell = isinstance(argv, str)
+        return subprocess.Popen(argv, shell=shell, creationflags=flags, env=child_env(), **kwargs)  # type: ignore[call-overload]
     return subprocess.Popen(argv, start_new_session=True, **kwargs)  # type: ignore[call-overload]
 
 

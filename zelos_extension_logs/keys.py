@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .remote import openssh
+from .remote import child_env, openssh
 
 
 class KeyFailure(Exception):
@@ -42,6 +42,7 @@ def ensure(data_dir: Path | None) -> Path:
         capture_output=True,
         text=True,
         check=False,
+        env=child_env(),
     )
     if done.returncode != 0:
         raise KeyFailure(f"ssh-keygen failed: {done.stderr.strip() or done.returncode}.")
