@@ -466,6 +466,20 @@ class TestWrap:
         finally:
             kill_group(proc)
 
+    def test_lines_sent_to_the_session_never_reach_the_command(
+        self, shell: str, tmp_path: Path
+    ) -> None:
+        proc = spawn(shell, "sleep 0.5; cat; echo done", tmp_path)
+        try:
+            assert proc.stdin is not None
+            proc.stdin.write(b"\n\nnot for the command\n")
+            proc.stdin.flush()
+
+            assert read_until_eof(proc) == b"done\n"
+            assert proc.wait(timeout=2) == 0
+        finally:
+            kill_group(proc)
+
     @pytest.mark.parametrize(("command", "status"), [("echo one", 0), ("exit 3", 3)])
     def test_the_session_exits_with_the_commands_own_status(
         self, shell: str, tmp_path: Path, command: str, status: int
@@ -593,6 +607,93 @@ class TestPopen:
         out, err = proc.communicate(b"hi\n", timeout=5)
 
         assert (out, err) == (b"hi\n", b"err\n")
+
+
+class Running:
+    """A process for `wake`: running until `end`."""
+
+    def __init__(self) -> None:
+        self.returncode: int | None = None
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+    def end(self) -> None:
+        self.returncode = 0
+
+
+class Received:
+    """A session's stdin: what was written to it, until it is closed."""
+
+    def __init__(self) -> None:
+        self.data = b""
+        self.closed = False
+
+    def write(self, data: bytes) -> int:
+        if self.closed:
+            raise ValueError("write to closed file")
+        self.data += data
+        return len(data)
+
+    def flush(self) -> None:
+        pass
+
+
+class TestWake:
+    @pytest.fixture(autouse=True)
+    def quick(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(remote, "_WAKE_S", 0.01)
+
+    def wake(self, process: Running, stdin: Received) -> None:
+        remote.wake(process, stdin)  # type: ignore[arg-type]
+
+    def test_on_windows_a_running_session_gets_newlines(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "win32")
+        process, stdin = Running(), Received()
+
+        self.wake(process, stdin)
+
+        wait_until(lambda: stdin.data.count(b"\n") >= 3)
+        assert set(stdin.data) == {ord("\n")}
+        process.end()
+
+    def test_the_newlines_stop_when_the_session_ends(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sys, "platform", "win32")
+        process, stdin = Running(), Received()
+        self.wake(process, stdin)
+        wait_until(lambda: stdin.data)
+
+        process.end()
+        time.sleep(0.05)
+        sent = stdin.data
+        time.sleep(0.1)
+
+        assert stdin.data == sent
+
+    @pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
+    def test_a_closed_stdin_stops_them_quietly(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sys, "platform", "win32")
+        process, stdin = Running(), Received()
+        self.wake(process, stdin)
+        wait_until(lambda: stdin.data)
+
+        stdin.closed = True
+        time.sleep(0.1)
+
+        assert process.poll() is None
+        process.end()
+
+    def test_elsewhere_nothing_is_written(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sys, "platform", "linux")
+        process, stdin = Running(), Received()
+
+        self.wake(process, stdin)
+        time.sleep(0.1)
+
+        assert stdin.data == b""
+        process.end()
 
 
 class TestChildEnv:
