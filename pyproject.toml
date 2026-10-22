@@ -20,6 +20,8 @@ dependencies = [
     "jsonschema>=4",
     # zoneinfo reads IANA zones from the system, and Windows has none.
     "tzdata; sys_platform == 'win32'",
+    # Windows' ProgramData folder, asked of Windows, for its OpenSSH.
+    "platformdirs>=4; sys_platform == 'win32'",
 ]
 
 [project.urls]

@@ -595,6 +595,35 @@ class TestPopen:
         assert (out, err) == (b"hi\n", b"err\n")
 
 
+class TestChildEnv:
+    def test_elsewhere_a_child_inherits_the_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "linux")
+
+        assert remote.child_env() is None
+
+    def test_on_windows_a_child_inherits_a_programdata_given(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setenv("PROGRAMDATA", r"E:\Data")
+
+        assert remote.child_env() is None
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="asks Windows for the folder")
+    def test_on_windows_openssh_gets_programdata_when_the_agent_leaves_it_out(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        given = os.environ["PROGRAMDATA"]
+        monkeypatch.delenv("PROGRAMDATA")
+
+        env = remote.child_env()
+
+        assert env is not None
+        assert Path(env["PROGRAMDATA"]) == Path(given)
+
+
 @POSIX
 class TestTerminate:
     def test_closing_stdin_is_enough_for_a_reader(self) -> None:
