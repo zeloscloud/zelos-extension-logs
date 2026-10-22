@@ -182,12 +182,11 @@ def _test(cfg: SourceConfig) -> dict[str, Any]:
         argv = remote.ssh_argv(cfg, probe.SCRIPT, keys.path(data_dir()))
     except remote.SshMissing as e:
         return {"status": "error", "message": str(e)}
-    started = time.time_ns()
     done = remote.run(argv, timeout=probe.TIMEOUT_S)
     if done is None:
         return {"status": "error", "message": f"{cfg.host} did not answer in time."}
     try:
-        board = probe.parse(done.stdout.decode("utf-8", "replace"), started)
+        board = probe.parse(done.stdout.decode("utf-8", "replace"), time.time_ns())
     except probe.Truncated:
         failure = remote.explain(done.stderr.decode("utf-8", "replace"), cfg.host or "")
         return {"status": "error", "message": failure.message}

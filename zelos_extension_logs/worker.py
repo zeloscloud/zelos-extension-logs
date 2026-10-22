@@ -368,7 +368,6 @@ class SourceWorker(threading.Thread):
         process = self._start(probe.SCRIPT, wrapped=False)
         if isinstance(process, remote.Failure):
             return process
-        started = self._now()
         try:
             out, err = process.communicate(timeout=probe.TIMEOUT_S)
         except subprocess.TimeoutExpired:
@@ -377,7 +376,7 @@ class SourceWorker(threading.Thread):
         finally:
             self._process = None
         try:
-            return probe.parse(out.decode("utf-8", "replace"), (started + self._now()) // 2)
+            return probe.parse(out.decode("utf-8", "replace"), self._now())
         except probe.Truncated:
             return self._explain((err or b"").decode("utf-8", "replace"))
 
