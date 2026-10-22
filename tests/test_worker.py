@@ -274,6 +274,30 @@ class TestJournalFlow:
 
         assert [round(r[TIME] - CLOCK_S, 3) for r in rig.programs()] == [-100.0, -50.0, -0.5]
 
+    def test_history_is_placed_from_when_the_probes_answer_arrived(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        clock = FakeClock(start_ns=CLOCK_S * S)
+
+        class SlowProbe(FakeProcess):
+            def communicate(
+                self, input: bytes | None = None, timeout: float | None = None
+            ) -> tuple[bytes, bytes]:
+                # ssh connects, then the board reads its uptime: 0.4 s from start to answer.
+                clock.advance(0.4)
+                return super().communicate(input, timeout)
+
+        rig = make(
+            None,
+            SlowProbe(probe_output(uptime="500.00")),
+            journal_session(entry(CURSOR_1, 400, "a"), entry(CURSOR_2, 499.5, "b")),
+            clock=clock,
+        )
+
+        rig.run_until("waiting")
+
+        assert [round(r[TIME] - CLOCK_S, 3) for r in rig.programs()] == [-99.6, -0.1]
+
     def test_time_source_arrival_ignores_the_boards_clocks(self, make: Callable[..., Rig]) -> None:
         rig = make(
             source(advanced={"time_source": "arrival"}),

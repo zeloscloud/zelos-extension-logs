@@ -49,6 +49,7 @@ class Probe:
     boot_id: str
     uptime_ns: int | None
     clock_s: int | None
+    # When the answer arrived: the board read its clocks before then.
     host_ns: int
 
     @property
