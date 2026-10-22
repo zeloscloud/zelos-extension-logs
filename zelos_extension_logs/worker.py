@@ -249,14 +249,23 @@ class SourceWorker(threading.Thread):
             if board.partial_journal and kind == "journal":
                 self._note("warn", probe.partial(board.user))
             self._note_restart(board)
-        elif self.cfg.read == "file":
+        elif self.cfg.read == "file" and self.cfg.connection == "local":
             assert self.cfg.path is not None
-            if self.cfg.connection == "local":
-                return self._follow_local(Path(self.cfg.path).expanduser())
-            command, kind = probe.tail(self.cfg.path), "file"
+            return self._follow_local(Path(self.cfg.path).expanduser())
         else:
-            assert self.cfg.command is not None
-            command, kind = self.cfg.command, "command"
+            if self.cfg.connection == "ssh":
+                probed = self._probe()
+                if isinstance(probed, remote.Failure):
+                    return False, self._failed(probed)
+                board = probed
+                self._user = board.user or self._user
+                self._note_restart(board)
+            if self.cfg.read == "file":
+                assert self.cfg.path is not None
+                command, kind = probe.tail(self.cfg.path), "file"
+            else:
+                assert self.cfg.command is not None
+                command, kind = self.cfg.command, "command"
         self.health.reading = kind
         self._note_gap(kind)
         process = self._start(command)
@@ -265,9 +274,10 @@ class SourceWorker(threading.Thread):
         said: deque[bytes] = deque(maxlen=_SAID_LINES)
         drain = threading.Thread(target=said.extend, args=(process.stderr or (),), daemon=True)
         drain.start()
+        # A quiet log prints nothing until its next line; the probe, or a local start, proved the
+        # way there.
+        self._connected()
         if kind == "journal":
-            # A quiet journal prints nothing until its next entry; the probe proved the way there.
-            self._connected()
             streamed = self._follow_journal(self._chunks(process), board, resumes_at)
         else:
             streamed = self._follow_text(self._chunks(process))

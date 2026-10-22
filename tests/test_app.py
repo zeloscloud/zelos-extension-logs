@@ -154,7 +154,7 @@ def test_each_source_gets_a_worker_under_its_name(
         "path": "/x",
     }
     board = FakeProcess("[2026-01-01 12:00:00.123] [pump] [info] started\n", hold_open=True)
-    fakes = Processes(board)
+    fakes = Processes(FakeProcess(PROBE), board)
 
     with running(settings=settings(DEMO, ssh), runner=fakes) as app_running:
         wait_until(
@@ -169,7 +169,7 @@ def test_each_source_gets_a_worker_under_its_name(
     events = trace_file.events()
     assert any(r["message"] == "started" for r in events["bench-1/log"])
     assert "demo/log" in events
-    assert fakes.command(0) == "tail -n 0 -F /x"
+    assert fakes.command(1) == "tail -n 0 -F /x"
     fakes.close()
 
 
