@@ -1,7 +1,7 @@
 [project]
 name = "zelos-extension-logs"
 version = "0.1.0"
-description = "Stream logs from Linux boards over SSH, and from files and commands, into Zelos."
+description = "Record Linux board logs over SSH (journald or syslog), any log file or command, and convert saved logs to Zelos traces (.trz): every line becomes a log event with its level and program, and printed values can become signals."
 authors = [{ name = "Zeloscloud", email = "info@zeloscloud.io" }]
 readme = "README.md"
 license = { text = "MIT" }

@@ -1,7 +1,7 @@
 {
   "type": "object",
   "title": "Logs",
-  "description": "Stream logs from Linux boards over SSH, and from files and commands on this computer.",
+  "description": "Record the logs of Linux boards over SSH, any log file, or the output of any command.",
   "ui:options": { "autoconfig": "Logs/auto_config" },
   "properties": {
     "sources": {
