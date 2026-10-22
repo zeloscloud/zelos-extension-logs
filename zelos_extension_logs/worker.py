@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, replace
 from datetime import timedelta
 from pathlib import Path
-from typing import Literal
+from typing import BinaryIO, Literal
 
 import zelos_sdk
 from zelos_log_lines import files
@@ -94,6 +94,33 @@ class Cursors:
 
 
 Runner = Callable[[list[str] | str, int, int], subprocess.Popen[bytes]]
+
+
+def _open_shared(path: Path) -> BinaryIO:
+    """`path` for reading, opened so a logger can still rename or delete it."""
+    if sys.platform != "win32" or os.name != "nt":
+        return path.open("rb")
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    create_file = ctypes.WinDLL("kernel32", use_last_error=True).CreateFileW
+    create_file.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    create_file.restype = wintypes.HANDLE
+    generic_read, open_existing, normal = 0x80000000, 3, 0x80
+    share = 0x1 | 0x2 | 0x4  # FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_SHARE_DELETE
+    handle = create_file(str(path), generic_read, share, None, open_existing, normal, None)
+    if handle in (None, ctypes.c_void_p(-1).value):  # INVALID_HANDLE_VALUE
+        raise ctypes.WinError(ctypes.get_last_error())
+    return os.fdopen(msvcrt.open_osfhandle(handle, os.O_RDONLY), "rb")
 
 
 def _run(argv: list[str] | str, stdin: int, stderr: int) -> subprocess.Popen[bytes]:
@@ -282,34 +309,50 @@ class SourceWorker(threading.Thread):
 
     def _appended(self, path: Path) -> Iterator[tuple[bytes, int]]:
         """What is added to the file at `path`, as `tail -F` follows it: from its end, or from its
-        start when it appears later, again from the start when it is truncated or replaced."""
+        start when it appears later, again from the start when it is truncated or replaced. A
+        replaced or deleted file is read to its end first, so a logger's last lines before it
+        rotates are kept."""
+        held: BinaryIO | None = None
         identity: tuple[int, int] | None = None
-        offset = 0
         from_end = True
-        while not self._stop_event.is_set():
-            try:
-                # Open only while reading, so Windows lets a logger rename it.
-                with path.open("rb") as file:
-                    stat = os.fstat(file.fileno())
-                    if (stat.st_dev, stat.st_ino) != identity:
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    named = path.stat()
+                except FileNotFoundError:
+                    named = None
+                    if identity is None:
+                        self._fail(
+                            f"No file {path} yet. Its lines are read once it appears.", False
+                        )
+                chunk = held.read(_READ_BYTES) if held is not None else b""
+                if not chunk and named is not None:
+                    if (named.st_dev, named.st_ino) != identity:
+                        if held is not None:
+                            held.close()
+                            held = None
+                        try:
+                            held = _open_shared(path)
+                        except FileNotFoundError:
+                            continue
+                        stat = os.fstat(held.fileno())
                         if identity is None:
                             self._connected()
                         identity = (stat.st_dev, stat.st_ino)
-                        offset = stat.st_size if from_end else 0
-                    elif stat.st_size < offset:
-                        offset = 0
-                    file.seek(offset)
-                    chunk = file.read(_READ_BYTES)
-            except FileNotFoundError:
-                if identity is None:
-                    self._fail(f"No file {path} yet. Its lines are read once it appears.", False)
-                chunk = b""
-            from_end = False
-            if chunk:
-                offset += len(chunk)
-                yield chunk, self._now()
-            else:
-                self._stop_event.wait(_POLL_S)
+                        if from_end:
+                            held.seek(0, os.SEEK_END)
+                    elif held is not None and named.st_size < held.tell():
+                        held.seek(0)
+                    if held is not None:
+                        chunk = held.read(_READ_BYTES)
+                from_end = False
+                if chunk:
+                    yield chunk, self._now()
+                else:
+                    self._stop_event.wait(_POLL_S)
+        finally:
+            if held is not None:
+                held.close()
 
     def _probe(self) -> probe.Probe | remote.Failure:
         process = self._start(probe.SCRIPT, wrapped=False)

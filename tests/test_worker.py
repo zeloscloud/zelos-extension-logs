@@ -1929,6 +1929,44 @@ class TestLocalFile:
         assert self.messages(rig) == ["one", "two"]
         assert rig.notes("dev") == []
 
+    def test_lines_written_just_before_a_rotation_are_read(
+        self, make: Callable[..., Rig], tmp_path: Path
+    ) -> None:
+        path = tmp_path / "pump.log"
+        path.write_text("", encoding="utf-8")
+        rig = self.follow(make, path)
+        try:
+            rig.wait_for("streaming")
+            append(path, "one\n")
+            wait_until(lambda: rig.worker.health.lines == 1)
+            append(path, "two\n")
+            rename(path, tmp_path / "pump.log.1")
+            path.write_text("three\n", encoding="utf-8")
+            wait_until(lambda: rig.worker.health.lines == 3)
+        finally:
+            rig.stop()
+
+        assert self.messages(rig) == ["one", "two", "three"]
+
+    def test_a_deleted_file_is_read_to_its_end_and_its_successor_from_the_start(
+        self, make: Callable[..., Rig], tmp_path: Path
+    ) -> None:
+        path = tmp_path / "pump.log"
+        path.write_text("", encoding="utf-8")
+        rig = self.follow(make, path)
+        try:
+            rig.wait_for("streaming")
+            append(path, "one\n")
+            wait_until(lambda: rig.worker.health.lines == 1)
+            append(path, "two\n")
+            path.unlink()
+            path.write_text("three\n", encoding="utf-8")
+            wait_until(lambda: rig.worker.health.lines == 3)
+        finally:
+            rig.stop()
+
+        assert self.messages(rig) == ["one", "two", "three"]
+
     def test_a_file_it_cannot_read_is_reported(
         self, make: Callable[..., Rig], tmp_path: Path
     ) -> None:
