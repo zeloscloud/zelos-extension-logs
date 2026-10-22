@@ -1,0 +1,526 @@
+"""One source: probe, follow its log, reconnect when it drops."""
+
+import json
+import logging
+import os
+import subprocess
+import sys
+import threading
+import time
+from collections import deque
+from collections.abc import Callable, Iterator
+from dataclasses import asdict, dataclass, replace
+from datetime import timedelta
+from pathlib import Path
+from typing import Literal
+
+import zelos_sdk
+from zelos_log_lines import files
+from zelos_log_lines.lines import Line
+from zelos_log_lines.records import Level, LogRecord
+from zelos_log_lines.stream import LogStream, StreamState
+
+from . import demo, journal, probe, remote
+from .config import SourceConfig
+
+logger = logging.getLogger(__name__)
+
+# The name of the extension's own notes in a source's log, beside the programs' names.
+NOTES = "logs"
+# Reconnect delays: a drop retries soon, a lasting failure (a refused login) once a minute.
+_FIRST_RETRY_S = 1.0
+_LONGEST_RETRY_S = 60.0
+# How often the journal position is saved.
+_SAVE_S = 5.0
+_SAMPLE_LINES = 200
+# ssh's last lines, read as they come: an undrained pipe would stall a chatty ssh, as with -v.
+_SAID_LINES = 50
+_READ_BYTES = 65536
+# How often a file on this computer is looked at for new lines.
+_POLL_S = 0.25
+# journalctl's words when the user may not read the system journal.
+_NO_PERMISSION = "insufficient permissions"
+
+State = Literal["starting", "connecting", "streaming", "waiting", "ended", "stopped"]
+# How a session ended: try again soon, try again once a minute, or never (a command that finished).
+Outcome = Literal["retry", "lasting", "done"]
+
+
+@dataclass(slots=True)
+class Health:
+    """What Get State reports for a source."""
+
+    state: State = "starting"
+    reading: str = ""
+    message: str = ""
+    lines: int = 0
+    reconnects: int = 0
+    gaps: int = 0
+    boot_id: str = ""
+    last_line_ns: int | None = None
+
+
+class Cursors:
+    """Each source's journal position, in the extension's data directory, which updates keep."""
+
+    def __init__(self, path: Path | None) -> None:
+        self._path = path
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> dict[str, object] | None:
+        with self._lock:
+            saved = self._read().get(key)
+        return saved if isinstance(saved, dict) else None
+
+    def put(self, key: str, value: dict[str, object]) -> None:
+        if self._path is None:
+            return
+        with self._lock:
+            data = self._read()
+            data[key] = value
+            tmp = self._path.with_suffix(".tmp")
+            tmp.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(json.dumps(data), encoding="utf-8")
+            tmp.replace(self._path)
+
+    def _read(self) -> dict[str, object]:
+        if self._path is None or not self._path.is_file():
+            return {}
+        try:
+            data = json.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+
+Runner = Callable[[list[str] | str, int, int], subprocess.Popen[bytes]]
+
+
+def _run(argv: list[str] | str, stdin: int, stderr: int) -> subprocess.Popen[bytes]:
+    return remote.popen(argv, stdin=stdin, stdout=subprocess.PIPE, stderr=stderr)
+
+
+class SourceWorker(threading.Thread):
+    """Follows one source's log until stopped, reconnecting whenever it ends."""
+
+    def __init__(
+        self,
+        cfg: SourceConfig,
+        source: zelos_sdk.TraceSource,
+        cursors: Cursors,
+        access_key: Path | None,
+        *,
+        run: Runner | None = None,
+        clock: Callable[[], int] = time.time_ns,
+        retention: timedelta | None = probe.HISTORY,
+    ) -> None:
+        """`retention` is how long the agent keeps data, None for no limit: how far back a first
+        start reads the journal, and how old a saved position may be."""
+        super().__init__(name=f"logs-{cfg.name}", daemon=True)
+        self.cfg = cfg
+        self.health = Health()
+        self._stream = LogStream(
+            source,
+            cfg.name,
+            notes=NOTES,
+            device_time=cfg.time_source == "device",
+            values=cfg.values,
+            on_line=self._on_line,
+        )
+        self._cursors = cursors
+        self._access_key = access_key
+        self._run = run or _run
+        self._now = clock
+        self._retention = retention
+        self._stop_event = threading.Event()
+        self._process: subprocess.Popen[bytes] | None = None
+        self._sample: deque[str] = deque(maxlen=_SAMPLE_LINES)
+        self._lock = threading.Lock()
+        self._cursor_key = f"{cfg.name}\0{cfg.connection}\0{cfg.host or ''}"
+        self._dropped_at: int | None = None
+        self._user = "this user"
+        self._refused = False
+
+    def stop(self, *, kill: bool = False) -> None:
+        """Stop following, and signal the process to stop, or with `kill` to die, without
+        waiting."""
+        self._stop_event.set()
+        process = self._process
+        if process is not None:
+            remote.stop(process, kill=kill)
+
+    def sample(self) -> list[str]:
+        with self._lock:
+            return list(self._sample)
+
+    def stream_state(self) -> StreamState:
+        return self._stream.state()
+
+    def run(self) -> None:
+        try:
+            self._follow()
+        finally:
+            self._stream.close()
+
+    def _follow(self) -> None:
+        delay = _FIRST_RETRY_S
+        while not self._stop_event.is_set():
+            try:
+                streamed, outcome = self._session()
+            except Exception:
+                # A bug must not end the source: it is logged and the source tries again.
+                logger.exception("%s: unexpected error", self.cfg.name)
+                streamed, outcome = False, "retry"
+            if self._stop_event.is_set():
+                break
+            if outcome == "done":
+                self.health.state = "ended"
+                return
+            self.health.state = "waiting"
+            self.health.reconnects += 1
+            self._dropped_at = self._dropped_at or self._now()
+            delay = _FIRST_RETRY_S if streamed else min(delay * 2, _LONGEST_RETRY_S)
+            self._stop_event.wait(_LONGEST_RETRY_S if outcome == "lasting" else delay)
+        self.health.state = "stopped"
+
+    def _session(self) -> tuple[bool, Outcome]:
+        """Probe, follow, and return whether anything streamed and how the session ended."""
+        self._refused = False
+        if self.cfg.connection == "demo":
+            self._connected()
+            return self._follow_journal(demo.lines(self._stop_event, self._now), None), "retry"
+        if self.cfg.read == "replay":
+            return self._replay()
+        self.health.state = "connecting"
+        board: probe.Probe | None = None
+        resumes_at: str | None = None
+        if self.cfg.read == "system":
+            if self.cfg.connection == "local" and sys.platform != "linux":
+                return False, self._failed(
+                    remote.Failure(
+                        "The system log is read on Linux. Read a file or a command here.", True
+                    )
+                )
+            probed = self._probe()
+            if isinstance(probed, remote.Failure):
+                return False, self._failed(probed)
+            board = probed
+            self._user = board.user or self._user
+            try:
+                log = probe.system_log(
+                    board, self._resume_cursor(), self.cfg.history, self._retention
+                )
+            except probe.NoLog:
+                return False, self._failed(
+                    remote.Failure(
+                        "No log found: no journalctl, no working logread, and no readable "
+                        "/var/log/messages or /var/log/syslog.",
+                        True,
+                    )
+                )
+            command, kind, resumes_at = log.command, log.kind, log.resumes_at
+            if board.partial_journal and kind == "journal":
+                self._note("warn", probe.partial(board.user))
+            self._note_restart(board)
+        elif self.cfg.read == "file":
+            assert self.cfg.path is not None
+            if self.cfg.connection == "local":
+                return self._follow_local(Path(self.cfg.path).expanduser())
+            command, kind = probe.tail(self.cfg.path), "file"
+        else:
+            assert self.cfg.command is not None
+            command, kind = self.cfg.command, "command"
+        self.health.reading = kind
+        self._note_gap(kind)
+        process = self._start(command)
+        if isinstance(process, remote.Failure):
+            return False, self._failed(process)
+        said: deque[bytes] = deque(maxlen=_SAID_LINES)
+        drain = threading.Thread(target=said.extend, args=(process.stderr or (),), daemon=True)
+        drain.start()
+        if kind == "journal":
+            # A quiet journal prints nothing until its next entry; the probe proved the way there.
+            self._connected()
+            streamed = self._follow_journal(self._chunks(process), board, resumes_at)
+        else:
+            streamed = self._follow_text(self._chunks(process))
+        remote.terminate(process, timeout=0.5)
+        self._process = None
+        drain.join(1.0)
+        err = b"".join(said).decode("utf-8", "replace")
+        return streamed, self._ended(process.returncode, err, streamed, kind)
+
+    def _replay(self) -> tuple[bool, Outcome]:
+        """Write the saved file at its printed pace, once: again, it would repeat its lines."""
+        assert self.cfg.path is not None
+        path = Path(self.cfg.path).expanduser()
+        self.health.reading = "replay"
+        self._connected()
+        try:
+            files.replay(
+                path, self._stream, self._stop_event, timing=self.cfg.timing, now=self._now
+            )
+        except Exception as e:
+            # A damaged compressed file raises its decompressor's own error.
+            reason = e.strerror if isinstance(e, OSError) and e.strerror else e
+            self._fail(f"Cannot read {path}: {reason}.", True)
+            return False, "done"
+        if not self._stop_event.is_set():
+            self.health.message = "The replay finished. It runs again when the extension restarts."
+            self._note("info", self.health.message)
+        return self.health.lines > 0, "done"
+
+    def _follow_local(self, path: Path) -> tuple[bool, Outcome]:
+        self.health.reading = "file"
+        self._note_gap("file")
+        try:
+            return self._follow_text(self._appended(path)), "retry"
+        except OSError as e:
+            return False, self._failed(
+                remote.Failure(f"Cannot read {path}: {e.strerror or e}.", False)
+            )
+
+    def _appended(self, path: Path) -> Iterator[tuple[bytes, int]]:
+        """What is added to the file at `path`, as `tail -F` follows it: from its end, or from its
+        start when it appears later, again from the start when it is truncated or replaced."""
+        identity: tuple[int, int] | None = None
+        offset = 0
+        from_end = True
+        while not self._stop_event.is_set():
+            try:
+                # Open only while reading, so Windows lets a logger rename it.
+                with path.open("rb") as file:
+                    stat = os.fstat(file.fileno())
+                    if (stat.st_dev, stat.st_ino) != identity:
+                        if identity is None:
+                            self._connected()
+                        identity = (stat.st_dev, stat.st_ino)
+                        offset = stat.st_size if from_end else 0
+                    elif stat.st_size < offset:
+                        offset = 0
+                    file.seek(offset)
+                    chunk = file.read(_READ_BYTES)
+            except FileNotFoundError:
+                if identity is None:
+                    self._fail(f"No file {path} yet. Its lines are read once it appears.", False)
+                chunk = b""
+            from_end = False
+            if chunk:
+                offset += len(chunk)
+                yield chunk, self._now()
+            else:
+                self._stop_event.wait(_POLL_S)
+
+    def _probe(self) -> probe.Probe | remote.Failure:
+        process = self._start(probe.SCRIPT, wrapped=False)
+        if isinstance(process, remote.Failure):
+            return process
+        started = self._now()
+        try:
+            out, err = process.communicate(timeout=probe.TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            remote.terminate(process)
+            return remote.Failure(f"{self._where()} did not answer the probe in time.", False)
+        finally:
+            self._process = None
+        try:
+            return probe.parse(out.decode("utf-8", "replace"), (started + self._now()) // 2)
+        except probe.Truncated:
+            return self._explain((err or b"").decode("utf-8", "replace"))
+
+    def _start(
+        self, command: str, *, wrapped: bool = True
+    ) -> subprocess.Popen[bytes] | remote.Failure:
+        argv: list[str] | str
+        # ssh's own errors stay apart, to explain a failed connection; a local command's are output.
+        stderr = subprocess.STDOUT
+        if self.cfg.connection == "ssh":
+            remote_command = remote.wrap(command) if wrapped else command
+            try:
+                argv = remote.ssh_argv(self.cfg, remote_command, self._access_key)
+            except remote.SshMissing as e:
+                return remote.Failure(str(e), True)
+            stderr = subprocess.PIPE
+        else:
+            argv = remote.local_argv(command)
+        try:
+            # A probe reads nothing; a stream's stdin stays open, as a wrapped command needs.
+            stdin = subprocess.PIPE if wrapped else subprocess.DEVNULL
+            self._process = self._run(argv, stdin, stderr)
+        except OSError as e:
+            program = argv if isinstance(argv, str) else argv[0]
+            return remote.Failure(f"Cannot start {program}: {e}.", True)
+        return self._process
+
+    def _chunks(self, process: subprocess.Popen[bytes]) -> Iterator[tuple[bytes, int]]:
+        stdout = process.stdout
+        assert stdout is not None
+        while not self._stop_event.is_set():
+            chunk = os.read(stdout.fileno(), _READ_BYTES)
+            if not chunk:
+                return
+            yield chunk, self._now()
+
+    def _ended(self, returncode: int, err: str, streamed: bool, kind: str) -> Outcome:
+        """Report why the process ended, with what it printed to stderr, and whether to try
+        again."""
+        if self._stop_event.is_set():
+            return "retry"
+        if self._refused:
+            return "lasting"
+        if self.cfg.connection == "ssh" and returncode == 255:
+            failure = self._explain(err)
+            # A login that worked before is not refused for good.
+            return self._failed(replace(failure, lasting=failure.lasting and not streamed))
+        if kind == "command" and returncode == 0:
+            # Run again, it would print the same lines again.
+            self._fail("The command finished. It runs again when the extension restarts.", False)
+            return "done"
+        return self._failed(
+            remote.Failure(f"{self._where()}: the log ended (exit {returncode}).", False)
+        )
+
+    def _follow_journal(
+        self,
+        chunks: Iterator[tuple[bytes, int]],
+        board: probe.Probe | None,
+        resumes_at: str | None = None,
+    ) -> bool:
+        placement = journal.Placement(board)
+        pending = b""
+        streamed = False
+        last_save = 0
+        cursor = ""
+        for chunk, host_ns in chunks:
+            pending += chunk
+            *complete, pending = pending.split(b"\n")
+            for raw in complete:
+                if not raw.strip():
+                    continue
+                entry = journal.read(raw)
+                if entry is None:
+                    self._journal_text(raw.decode("utf-8", "replace"), host_ns)
+                    continue
+                skip, resumes_at = resumes_at, None
+                if entry.cursor == skip:
+                    continue
+                streamed = True
+                cursor = entry.cursor
+                self.health.boot_id = entry.boot_id
+                time_ns = (
+                    None if self.cfg.time_source == "arrival" else placement.place(entry, host_ns)
+                )
+                # The stream reads the entry's message, level, program and source line.
+                self._stream.write(raw.decode("utf-8", "replace"), host_ns, time_ns=time_ns)
+                if time_ns is not None:
+                    # The entry's own time: a resumed journal places its backlog in the past.
+                    self.health.last_line_ns = time_ns
+            if cursor and host_ns - last_save >= _SAVE_S * 1e9:
+                last_save = host_ns
+                self._save(cursor)
+        if cursor:
+            self._save(cursor)
+        return streamed
+
+    def _journal_text(self, text: str, host_ns: int) -> None:
+        # journalctl's own words, such as a refused read, arrive between the entries.
+        if _NO_PERMISSION in text:
+            self._refused = True
+            self._fail(probe.partial(self._user), True)
+        self._note("warn", text.strip(), host_ns)
+
+    def _follow_text(self, chunks: Iterator[tuple[bytes, int]]) -> bool:
+        lines = self.health.lines
+        for chunk, host_ns in chunks:
+            self._stream.feed(chunk, host_ns)
+        self._stream.end()
+        return self.health.lines > lines
+
+    def _on_line(self, line: Line, record: LogRecord) -> None:
+        # A journal is streaming once its probe passes; other logs once a line arrives.
+        if self.health.state == "connecting":
+            self._connected()
+        self.health.lines += 1
+        self.health.last_line_ns = line.host_ns
+        with self._lock:
+            self._sample.append(record.message)
+
+    def _note(self, level: Level, message: str, time_ns: int | None = None) -> None:
+        if not message:
+            return
+        self._stream.note(level, f"[{NOTES}] {message}", time_ns or self._now())
+
+    def _connected(self) -> None:
+        self.health.state = "streaming"
+        self.health.message = ""
+
+    def _fail(self, message: str, lasting: bool) -> None:
+        if message != self.health.message:
+            logger.warning("%s: %s", self.cfg.name, message)
+            self._note("error" if lasting else "warn", message)
+        self.health.message = message
+
+    def _failed(self, failure: remote.Failure) -> Outcome:
+        self._fail(failure.message, failure.lasting)
+        return "lasting" if failure.lasting else "retry"
+
+    def _explain(self, stderr: str) -> remote.Failure:
+        return remote.explain(stderr, self._where())
+
+    def _where(self) -> str:
+        return self.cfg.host or "this computer"
+
+    def _resume_cursor(self) -> str | None:
+        saved = self._cursors.get(self._cursor_key)
+        if not saved or self.cfg.history == "new":
+            return None
+        saved_at = saved.get("saved_ns")
+        # Older than the agent keeps data: start from what it keeps instead.
+        if not isinstance(saved_at, int) or (
+            self._retention is not None
+            and self._now() - saved_at > self._retention.total_seconds() * 1e9
+        ):
+            return None
+        cursor = saved.get("cursor")
+        return cursor if isinstance(cursor, str) and cursor else None
+
+    def _save(self, cursor: str) -> None:
+        try:
+            self._cursors.put(
+                self._cursor_key,
+                {"cursor": cursor, "boot_id": self.health.boot_id, "saved_ns": self._now()},
+            )
+        except OSError as e:
+            logger.warning("%s: cannot save the journal position: %s", self.cfg.name, e)
+
+    def _note_restart(self, board: probe.Probe) -> None:
+        saved = self._cursors.get(self._cursor_key)
+        if saved and board.boot_id and saved.get("boot_id") not in ("", None, board.boot_id):
+            self._note("warn", "device restarted")
+
+    def _note_gap(self, kind: str) -> None:
+        dropped, self._dropped_at = self._dropped_at, None
+        # The journal resumes at its cursor; other logs lose what printed while disconnected.
+        if dropped is not None and kind != "journal":
+            self.health.gaps += 1
+            seconds = (self._now() - dropped) / 1e9
+            self._note(
+                "warn", f"Reconnected after {seconds:.0f} s; lines printed meanwhile are missing."
+            )
+
+
+def state_of(worker: SourceWorker) -> dict[str, object]:
+    """Get State's answer for one source."""
+    cfg = worker.cfg
+    stream = worker.stream_state()
+    return {
+        "name": cfg.name,
+        "connection": cfg.connection,
+        "host": cfg.host,
+        "read": cfg.read,
+        **asdict(worker.health),
+        "long_lines": stream.long_lines,
+        "late_names": stream.late_names,
+        "errors": stream.errors,
+        "signals": [asdict(signal) for signal in stream.signals],
+    }

@@ -1,0 +1,37 @@
+name = "Logs"
+version = "0.1.0"
+description = "Stream logs from Linux boards over SSH, and from files and commands: the journal or syslog lands in the Log panel with each line's level, program and time."
+author = "Zelos"
+repository = "https://github.com/zeloscloud/zelos-extension-logs"
+homepage = "https://github.com/zeloscloud/zelos-extension-logs"
+# The app's search and its AI read these, with the name and description; the page shows the first
+# three categories.
+keywords = ["logs", "journald", "journalctl", "syslog", "ssh", "linux", "embedded linux", "yocto", "buildroot", "busybox", "openwrt", "logread", "dmesg", "logcat", "tail", "log file", "spdlog", "glog"]
+categories = ["Embedded", "Diagnostics", "IoT", "Industrial"]
+
+icon = "assets/icon.png"
+readme = "README.md"
+
+# From 26.0.9 an update keeps the extension's data directory, which holds the journal positions
+# and the access key.
+[zelos]
+version = ">=26.0.9"
+
+[config]
+schema = "config.schema.json"
+
+[host]
+type = "agent"
+
+[host.agent]
+entry = "main.py"
+python_version = "3.11"
+
+# Linux and macOS: SIGTERM, then SIGKILL after this many seconds. Every source stops within 1 s, all
+# at once, and the app flushes after; the rest is headroom for the SDK's atexit drain.
+[host.agent.stop]
+grace_seconds = 5
+
+[package]
+# assets/readme: an installed copy shows the README's pictures from the package, not from GitHub.
+paths = ["main.py", "zelos_extension_logs", "LICENSE", "assets/readme"]

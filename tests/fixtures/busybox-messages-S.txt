@@ -1,0 +1,8 @@
+Oct 21 18:20:05 syslogd started: BusyBox v1.36.1
+Oct 21 18:20:07 root: warn line one
+Oct 21 18:20:07 root: err line two
+Oct 21 18:20:07 mytag: info with tag
+Oct 21 18:20:07 svc: multi word  message, with: colons
+Oct 21 18:20:07 root: debug line
+Oct 21 18:20:07 root: notice
+Oct 21 18:20:07 root: emerg
