@@ -120,7 +120,7 @@ def _blank(source: Any) -> bool:
     "what to fix.",
     timeout=probe.TIMEOUT_S + 5,
     standalone=True,
-    read_only=True,
+    # Not read-only: its host and ssh options can reach any server or run a local command.
 )
 @action.text("host", title="Host", description="[user@]host, or a Host from your SSH config.")
 @action.integer(

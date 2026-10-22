@@ -22,7 +22,7 @@ SCHEMA = json.loads((REPO_ROOT / MANIFEST["config"]["schema"]).read_text(encodin
 STANDALONE = {
     "list_hosts": True,
     "auto_config": True,
-    "test_connection": True,
+    "test_connection": False,
     "show_access_key": False,
     "convert_log_file": False,
 }

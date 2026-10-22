@@ -914,7 +914,7 @@ def test_which_actions_run_without_the_extension() -> None:
     assert flags == {
         "list_hosts": (True, True),
         "auto_config": (True, True),
-        "test_connection": (True, True),
+        "test_connection": (True, False),
         "show_access_key": (True, False),
         "convert_log_file": (True, False),
         "run_command": (False, False),
