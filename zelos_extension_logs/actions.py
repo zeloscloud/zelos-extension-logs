@@ -87,7 +87,7 @@ def list_hosts() -> dict[str, Any]:
 )
 @action.object("config", title="Configuration", properties={}, required=False)
 def auto_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
-    sources: list[Any] = list((config or {}).get("sources") or [])
+    sources: list[Any] = [s for s in (config or {}).get("sources") or [] if not _blank(s)]
     has_local = any(
         isinstance(s, dict)
         and s.get("connection") == "local"
@@ -103,6 +103,15 @@ def auto_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
         sources = [{"connection": "demo"}]
         message = "The system log is read on Linux; added the demo device."
     return {"status": "success", "config": {"sources": sources}, "message": message}
+
+
+def _blank(source: Any) -> bool:
+    """An SSH source with nothing typed in, as a new form holds one."""
+    return (
+        isinstance(source, dict)
+        and source.get("connection", "ssh") == "ssh"
+        and not any(source.get(key) for key in ("host", "path", "command", "name"))
+    )
 
 
 @action(

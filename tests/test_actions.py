@@ -105,6 +105,8 @@ class TestListHosts:
 
 class TestAutoConfig:
     LOCAL = {"connection": "local", "read": "system"}
+    # What a new form holds: one SSH source with nothing typed in, and the defaults it fills in.
+    BLANK = {"connection": "ssh", "read": "system", "advanced": {"host_key_policy": "auto"}}
 
     def test_on_this_platform(self) -> None:
         result = run("auto_config")
@@ -159,6 +161,32 @@ class TestAutoConfig:
         result = run("auto_config", config={"sources": []})
 
         assert result["config"] == {"sources": [{"connection": "demo"}]}
+
+    def test_the_blank_source_of_a_new_form_makes_way_for_the_demo(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "darwin")
+
+        result = run("auto_config", config={"sources": [self.BLANK]})
+
+        assert result["config"] == {"sources": [{"connection": "demo"}]}
+
+    def test_on_linux_the_blank_source_makes_way_for_the_system_log(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "linux")
+
+        result = run("auto_config", config={"sources": [self.BLANK]})
+
+        assert result["config"] == {"sources": [self.LOCAL]}
+
+    def test_a_source_with_anything_typed_in_is_kept(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sys, "platform", "darwin")
+        named = {**self.BLANK, "name": "bench"}
+
+        result = run("auto_config", config={"sources": [named]})
+
+        assert result["config"] == {"sources": [named]}
 
     def test_does_not_change_what_it_was_given(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(sys, "platform", "linux")
