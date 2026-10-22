@@ -402,6 +402,8 @@ class SourceWorker(threading.Thread):
         except OSError as e:
             program = argv if isinstance(argv, str) else argv[0]
             return remote.Failure(f"Cannot start {program}: {e}.", True)
+        if self.cfg.connection == "ssh" and wrapped and self._process.stdin is not None:
+            remote.wake(self._process, self._process.stdin)
         return self._process
 
     def _chunks(self, process: subprocess.Popen[bytes]) -> Iterator[tuple[bytes, int]]:

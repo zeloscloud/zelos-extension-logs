@@ -8,11 +8,16 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO
 
 from .config import SourceConfig
 
+# How often a wrapped session's stdin gets a newline on Windows.
+_WAKE_S = 0.5
 # The keys ssh offers when nothing names one. Naming the access key with -i stops ssh from offering
 # these by itself, so they are named too.
 _DEFAULT_KEYS = ("id_ed25519", "id_ecdsa", "id_rsa")
@@ -140,6 +145,28 @@ def popen(argv: list[str] | str, **kwargs: object) -> subprocess.Popen[bytes]:
     return subprocess.Popen(argv, start_new_session=True, **kwargs)  # type: ignore[call-overload]
 
 
+def wake(process: subprocess.Popen[bytes], stdin: IO[bytes]) -> None:
+    """On Windows, write a newline to a wrapped ssh session's `stdin` every half second while it
+    runs; elsewhere, nothing.
+
+    Windows' ssh.exe can hang closing its idle stdin when a session ends, until a byte arrives.
+    The session reads and drops whole lines, and the command never sees them.
+    """
+    if sys.platform != "win32":
+        return
+
+    def beat() -> None:
+        while process.poll() is None:
+            try:
+                stdin.write(b"\n")
+                stdin.flush()
+            except (OSError, ValueError):
+                return
+            time.sleep(_WAKE_S)
+
+    threading.Thread(target=beat, name="ssh-stdin", daemon=True).start()
+
+
 def stop(process: subprocess.Popen[bytes], *, kill: bool = False) -> None:
     """Close stdin, which ends a wrapped remote command, and signal the process and its group to
     stop, or with `kill` to die; returns without waiting."""
@@ -185,16 +212,20 @@ def run(
 ) -> subprocess.CompletedProcess[bytes] | None:
     """Run `argv` to its end, or stop it and what it started after `timeout` and return None.
 
-    With `hold_stdin`, its stdin stays open until then, as a wrapped remote command needs; without,
-    it reads nothing. `stderr` is Popen's: STDOUT puts a local command's errors in its output.
+    With `hold_stdin`, its stdin stays open until then, as a wrapped remote command needs, and
+    `wake` keeps it moving; without, it reads nothing. `stderr` is Popen's: STDOUT puts a local
+    command's errors in its output.
     """
     with contextlib.ExitStack() as held:
         stdin = subprocess.DEVNULL
+        session: IO[bytes] | None = None
         if hold_stdin:
             stdin, end = os.pipe()
             held.callback(os.close, stdin)
-            held.callback(os.close, end)
+            session = held.enter_context(os.fdopen(end, "wb", buffering=0))
         process = popen(argv, stdin=stdin, stdout=subprocess.PIPE, stderr=stderr)
+        if session is not None:
+            wake(process, session)
         try:
             out, err = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:

@@ -311,6 +311,17 @@ class TestJournalFlow:
         assert [round((r[TIME] - CLOCK_S) * 1e6) for r in rig.programs()] == [0, 1]
         assert rig.worker.health.last_line_ns == CLOCK_S * S
 
+    def test_the_stream_gets_newlines_on_windows_and_the_probe_does_not(
+        self, make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        woken: list[object] = []
+        monkeypatch.setattr(remote, "wake", lambda process, stdin: woken.append(process))
+        rig = make(None, probe_process(), journal_session(entry(CURSOR_1, 400, "a")))
+
+        rig.run_until("waiting")
+
+        assert woken == [rig.processes.started[1]]
+
     def test_the_commands_are_the_probe_then_the_journal(self, make: Callable[..., Rig]) -> None:
         rig = make(None, probe_process(), journal_session(entry(CURSOR_1, 400, "a")))
 
@@ -1575,6 +1586,17 @@ class TestText:
 
         assert rig.processes.argvs == [remote.local_argv("dmesg -w")]
         assert rig.processes.stderrs == [subprocess.STDOUT]
+
+    def test_a_local_command_never_gets_newlines(
+        self, make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        woken: list[object] = []
+        monkeypatch.setattr(remote, "wake", lambda process, stdin: woken.append(process))
+        rig = make(command("cat"), FakeProcess("x\n"))
+
+        rig.run_until("ended")
+
+        assert woken == []
 
     def test_a_file_over_ssh_is_followed_with_tail(self, make: Callable[..., Rig]) -> None:
         rig = make(
