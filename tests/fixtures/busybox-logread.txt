@@ -1,0 +1,10 @@
+Oct 21 18:09:50 b-alp-C syslog.info syslogd started: BusyBox v1.36.1
+Oct 21 18:19:49 b-alp-C user.warn root: warn line one
+Oct 21 18:19:49 b-alp-C daemon.err root: err line two
+Oct 21 18:19:49 b-alp-C user.info mytag: info with tag
+Oct 21 18:19:49 b-alp-C auth.crit svc: multi word  message, with: colons
+Oct 21 18:19:49 b-alp-C user.debug root: debug line
+Oct 21 18:19:49 b-alp-C user.notice root: notice
+Oct 21 18:19:49 b-alp-C kern.emerg root: emerg
+Oct 21 18:20:10 b-alp-C user.warn root: live line
+Oct 21 18:20:21 b-alp-C user.err root: live line 2

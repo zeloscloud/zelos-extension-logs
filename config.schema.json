@@ -1,0 +1,86 @@
+{
+  "type": "object",
+  "title": "Logs",
+  "description": "Stream logs from Linux boards over SSH, and from files and commands on this computer.",
+  "ui:options": { "autoconfig": "Logs/auto_config" },
+  "properties": {
+    "sources": {
+      "type": "array", "title": "Sources", "minItems": 1, "default": [],
+      "description": "One entry for each log to record. On Linux, Auto-configure adds this computer's own system log.",
+      "items": {
+        "type": "object", "title": "Source",
+        "properties": {
+          "connection": { "type": "string", "title": "Connection", "enum": ["ssh", "local", "demo"], "ui:enumNames": ["SSH", "This computer", "Demo device"], "default": "ssh" },
+          "read": { "type": "string", "title": "Read", "enum": ["system", "file", "command", "replay"], "ui:enumNames": ["System log", "A file", "A command", "A saved file, replayed"], "default": "system", "description": "The system log is the journal, or syslog where there is no journal." },
+          "name": { "type": "string", "title": "Name", "description": "How this source appears in the trace. Letters, digits, spaces, _ and -. Empty says where it reads: the host made safe (root@bench.local becomes bench_local), local or demo, then the file's name or the command's program.", "pattern": "^[A-Za-z0-9 _-]*$", "maxLength": 64 }
+        },
+        "required": ["connection"],
+        "dependencies": {
+          "connection": {
+            "oneOf": [
+              { "properties": {
+                  "connection": { "enum": ["ssh"] },
+                  "read": { "title": "Read", "enum": ["system", "file", "command"] },
+                  "host": { "type": "string", "title": "Host", "minLength": 1, "description": "[user@]host, or a Host from your SSH config.", "ui:widget": "action-choices", "ui:options": { "action": "Logs/list_hosts" } },
+                  "advanced": { "type": "object", "title": "Advanced", "ui:options": { "collapsed": true }, "properties": {
+                    "ssh_port": { "type": "integer", "title": "SSH port", "minimum": 1, "maximum": 65535, "description": "Empty uses your SSH config, or 22." },
+                    "key_path": { "type": "string", "title": "Key file", "description": "A private key to use instead of your SSH agent, your default keys and the access key.", "ui:widget": "file-picker" },
+                    "host_key_policy": { "type": "string", "title": "Host key check", "enum": ["auto", "strict"], "ui:enumNames": ["Trust the board's key", "Check known_hosts"], "default": "auto", "description": "A reflashed board gets a new host key. Check known_hosts refuses a key it does not know." },
+                    "ssh_options": { "type": "string", "title": "Extra ssh options", "description": "Passed to ssh before the options above, such as -J bastion." },
+                    "history": { "type": "string", "title": "History", "enum": ["kept", "new"], "ui:enumNames": ["What the agent keeps", "New lines only"], "default": "kept", "description": "On the first start, the journal sends the current boot, as far back as the agent keeps data. Other logs start at new lines." },
+                    "time_source": { "type": "string", "title": "Time", "enum": ["device", "arrival"], "ui:enumNames": ["The device's clock", "When the line arrives"], "default": "device", "description": "The device's clock places journal lines by the board's own monotonic time, so a board whose clock is wrong still lines up." },
+                    "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Off for the system log, on otherwise", "On", "Off"], "default": "auto" } } } },
+                "required": ["host"] },
+              { "properties": { "connection": { "enum": ["local"] } },
+                "if": { "properties": { "read": { "const": "replay" } }, "required": ["read"] },
+                "else": { "properties": {
+                  "advanced": { "type": "object", "title": "Advanced", "ui:options": { "collapsed": true }, "properties": {
+                    "history": { "type": "string", "title": "History", "enum": ["kept", "new"], "ui:enumNames": ["What the agent keeps", "New lines only"], "default": "kept", "description": "On the first start, the journal sends the current boot, as far back as the agent keeps data. Other logs start at new lines." },
+                    "time_source": { "type": "string", "title": "Time", "enum": ["device", "arrival"], "ui:enumNames": ["The device's clock", "When the line arrives"], "default": "device", "description": "The device's clock places journal lines by the journal's own monotonic time." },
+                    "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Off for the system log, on otherwise", "On", "Off"], "default": "auto" } } } } } },
+              { "properties": { "connection": { "enum": ["demo"] }, "read": { "title": "Read", "enum": ["system"], "ui:enumNames": ["System log"] } } }
+            ]
+          },
+          "read": {
+            "oneOf": [
+              { "properties": { "read": { "enum": ["system"] } } },
+              { "properties": {
+                  "read": { "enum": ["file"] },
+                  "path": { "type": "string", "title": "File", "minLength": 1, "description": "The file to follow, such as /var/log/app.log. Rotation keeps working." } },
+                "required": ["path"] },
+              { "properties": {
+                  "read": { "enum": ["command"] },
+                  "command": { "type": "string", "title": "Command", "minLength": 1, "description": "Any command that prints lines, such as dmesg -w or adb logcat. Over SSH it runs in sh on the host." } },
+                "required": ["command"] },
+              { "properties": {
+                  "read": { "enum": ["replay"] },
+                  "path": { "type": "string", "title": "File", "minLength": 1, "description": "A saved log file on this computer, plain or compressed with gzip, bzip2, xz or zstd. Its lines arrive at the pace they were printed, the first one now.", "ui:widget": "file-picker" },
+                  "advanced": { "type": "object", "title": "Advanced", "ui:options": { "collapsed": true }, "properties": {
+                    "time_zone": { "type": "string", "title": "Time zone", "description": "The time zone of stamps that print none, such as Europe/Berlin. Empty uses this computer's." },
+                    "year": { "type": "integer", "title": "Year", "minimum": 1970, "maximum": 2261, "description": "The year of the last stamp that prints none. Empty takes it from the file's last change." },
+                    "start_time": { "type": "string", "title": "Start time", "description": "When the first line printed, for a file that prints only uptime, such as 2026-10-21T14:03:01+02:00. Empty ends the file at its last change." },
+                    "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Off for the system log, on otherwise", "On", "Off"], "default": "auto" } } } },
+                "required": ["path"] }
+            ]
+          }
+        },
+        "ui:order": ["connection", "host", "read", "path", "command", "name", "*"]
+      }
+    },
+    "advanced": {
+      "type": "object", "title": "Advanced (all sources)", "ui:options": { "collapsed": true }, "additionalProperties": false, "default": {},
+      "properties": {
+        "prefix": { "type": "string", "title": "Prefix", "default": "Logs", "pattern": "^[A-Za-z0-9 _-]*[A-Za-z0-9_-][A-Za-z0-9 _-]*$", "maxLength": 128, "description": "The trace source every log publishes under." },
+        "log_level": { "type": "string", "title": "Log level", "enum": ["DEBUG", "INFO", "WARNING", "ERROR"], "default": "INFO" }
+      }
+    }
+  },
+  "required": ["sources"],
+  "examples": [
+    { "sources": [{ "connection": "ssh", "host": "root@bench-1" }] },
+    { "sources": [{ "connection": "ssh", "host": "root@bench-1", "read": "file", "path": "/var/log/acme/run.log", "name": "bench-1 run" }] },
+    { "sources": [{ "connection": "local", "read": "command", "command": "adb logcat", "name": "tablet" }] },
+    { "sources": [{ "connection": "local", "read": "replay", "path": "/var/log/app.log.1", "advanced": { "time_zone": "Europe/Berlin" } }] },
+    { "sources": [{ "connection": "demo" }] }
+  ]
+}
