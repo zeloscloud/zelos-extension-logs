@@ -231,7 +231,7 @@ def unwrap(text: str) -> str:
 class Processes:
     """The worker's `run=` hook: hands out one scripted process per call, in order.
 
-    The first call is the probe when the system log is read. A call past the script raises
+    The first call over ssh is the probe. A call past the script raises
     OSError, which a worker reports as a failure to start, and is recorded in `unscripted`.
     """
 

@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import shlex
 import subprocess
 import sys
 import threading
@@ -1230,7 +1231,9 @@ def test_ssh_that_prints_much_to_stderr_does_not_stall_the_log(
     """As `-v` in Extra ssh options does, for as long as the session lasts."""
     chatty = tmp_path / "ssh"
     chatty.write_text(
-        "#!/bin/sh\nhead -c 200000 /dev/zero | tr '\\0' x >&2\necho started\nexec sleep 30\n",
+        "#!/bin/sh\n"
+        f"case \"$*\" in *'p uid'*) printf {shlex.quote(probe_output())}; exit 0;; esac\n"
+        "head -c 200000 /dev/zero | tr '\\0' x >&2\necho started\nexec sleep 30\n",
         encoding="utf-8",
     )
     chatty.chmod(0o755)
@@ -1488,7 +1491,11 @@ class TestText:
     def test_a_command_that_ends_over_ssh_with_zero_ends_the_source_too(
         self, make: Callable[..., Rig]
     ) -> None:
-        rig = make(source(read="command", command="dmesg"), FakeProcess("hi\n"))
+        rig = make(
+            source(read="command", command="dmesg"),
+            FakeProcess(probe_output()),
+            FakeProcess("hi\n"),
+        )
 
         rig.start()
         rig.worker.join(5)
@@ -1548,21 +1555,48 @@ class TestText:
     def test_a_file_over_ssh_is_followed_with_tail(self, make: Callable[..., Rig]) -> None:
         rig = make(
             source(read="file", path="/var/log/acme/run.log"),
+            FakeProcess(probe_output()),
             FakeProcess("[2026-01-01 12:00:00.123] [pump] [info] started\n", hold_open=True),
         )
         rig.run_until(lambda: rig.worker.health.lines == 1)
 
-        assert rig.processes.command(0) == "tail -n 0 -F /var/log/acme/run.log"
-        assert rig.processes.argvs[0][-1] == remote.wrap(rig.processes.command(0))
+        assert rig.processes.command(1) == "tail -n 0 -F /var/log/acme/run.log"
+        assert rig.processes.argvs[1][-1] == remote.wrap(rig.processes.command(1))
         assert rig.worker.health.reading == "file"
         assert [r["message"] for r in rig.programs()] == ["started"]
 
     def test_a_file_name_with_a_space_is_quoted(self, make: Callable[..., Rig]) -> None:
-        rig = make(source(read="file", path="/var/log/my app.log"), FakeProcess("x\n"))
+        rig = make(
+            source(read="file", path="/var/log/my app.log"),
+            FakeProcess(probe_output()),
+            FakeProcess("x\n"),
+        )
 
         rig.run_until("waiting")
 
-        assert rig.processes.command(0) == "tail -n 0 -F '/var/log/my app.log'"
+        assert rig.processes.command(1) == "tail -n 0 -F '/var/log/my app.log'"
+
+    def test_a_quiet_file_over_ssh_is_streaming_once_the_probe_passes(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        rig = make(
+            source(read="file", path="/var/log/quiet.log"),
+            FakeProcess(probe_output()),
+            FakeProcess("", hold_open=True),
+        )
+
+        rig.run_until("streaming")
+
+        assert rig.worker.health.lines == 0
+
+    def test_a_quiet_local_command_is_streaming_once_it_starts(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        rig = make(command("quiet"), FakeProcess("", hold_open=True))
+
+        rig.run_until("streaming")
+
+        assert rig.worker.health.lines == 0
 
     @pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell")
     def test_stderr_of_every_statement_of_a_command_reaches_the_log(
@@ -1577,11 +1611,15 @@ class TestText:
         assert sorted(r["message"] for r in rig.programs("dev")) == ["err", "out"]
 
     def test_a_command_over_ssh_runs_as_given(self, make: Callable[..., Rig]) -> None:
-        rig = make(source(read="command", command="dmesg -w | cat"), FakeProcess("x\n"))
+        rig = make(
+            source(read="command", command="dmesg -w | cat"),
+            FakeProcess(probe_output()),
+            FakeProcess("x\n"),
+        )
 
         rig.run_until("ended")
 
-        assert rig.processes.command(0) == "dmesg -w | cat"
+        assert rig.processes.command(1) == "dmesg -w | cat"
         assert rig.worker.health.reading == "command"
 
     def test_the_system_log_of_a_busybox_board_is_logread(self, make: Callable[..., Rig]) -> None:
