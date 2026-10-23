@@ -128,7 +128,7 @@ def _parsers() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser]:
         parents=[common],
         help="replay a saved log file into the agent",
         description="Write a saved log file into the agent at the pace its lines were printed, "
-        "the first one now. Ctrl-C stops it.",
+        "starting now. Ctrl-C stops it.",
     )
     replay.add_argument("file", type=Path, metavar="FILE", help="plain, gzip, bzip2, xz or zstd")
     return parser, convert

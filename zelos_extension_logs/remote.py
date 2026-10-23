@@ -295,14 +295,13 @@ class Failure:
 _FAILURES: tuple[tuple[tuple[str, ...], str, bool], ...] = (
     (
         ("remote host identification has changed",),
-        "The host key of {host} changed. Run {remove}, or set Host key check to Trust the "
-        "board's key.",
+        "The host key of {host} changed. Run {remove}, or set Host key check to Trust any key.",
         True,
     ),
     (
         ("host key verification failed",),
         "The host key of {host} is not in known_hosts. Connect once with ssh to add it, or set "
-        "Host key check to Trust the board's key.",
+        "Host key check to Trust any key.",
         True,
     ),
     (
