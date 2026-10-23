@@ -46,8 +46,9 @@ _BOOT_ID = Path("/proc/sys/kernel/random/boot_id")
 _UNREADABLE = {"directory": "Is a directory", "unreadable": "Permission denied"}
 
 State = Literal["starting", "connecting", "streaming", "waiting", "ended", "stopped"]
-# How a session ended: try again soon, try again once a minute, or never (a command that finished).
-Outcome = Literal["retry", "lasting", "done"]
+# How a session ended: try again soon, try again once a minute, never (a command that finished), or
+# at once to follow the journal whose history it read.
+Outcome = Literal["retry", "lasting", "done", "follow"]
 
 
 @dataclass(slots=True)
@@ -185,6 +186,8 @@ class SourceWorker(threading.Thread):
         self._dropped_at: int | None = None
         self._user = "this user"
         self._refused = False
+        # The last session read the journal's history, and this one follows it.
+        self._read_history = False
 
     def stop(self, *, kill: bool = False) -> None:
         """Stop following, and signal the process to stop, or with `kill` to die, without
@@ -222,6 +225,8 @@ class SourceWorker(threading.Thread):
             if outcome == "done":
                 self.health.state = "ended"
                 return
+            if outcome == "follow":
+                continue
             self.health.state = "waiting"
             self.health.reconnects += 1
             self._dropped_at = self._dropped_at or self._now()
@@ -234,6 +239,7 @@ class SourceWorker(threading.Thread):
     def _session(self) -> Outcome:
         """Probe, follow, and return how the session ended."""
         self._refused = False
+        follows, self._read_history = self._read_history, False
         if self.cfg.connection == "demo":
             self._connected()
             self._follow_journal(demo.lines(self._stop_event, self._now), None)
@@ -243,6 +249,7 @@ class SourceWorker(threading.Thread):
         self.health.state = "connecting"
         board: probe.Probe | None = None
         resumes_at: str | None = None
+        history = False
         if self.cfg.read == "system":
             if self.cfg.connection == "local" and sys.platform != "linux":
                 return self._failed(
@@ -256,9 +263,9 @@ class SourceWorker(threading.Thread):
             board = probed
             self._user = board.user or self._user
             try:
-                log = probe.system_log(
-                    board, self._resume_cursor(), self.cfg.history, self._retention
-                )
+                # A history that printed no entry and left no position is not read again.
+                kept = "new" if follows else self.cfg.history
+                log = probe.system_log(board, self._resume_cursor(), kept, self._retention)
             except probe.NoLog:
                 return self._failed(
                     remote.Failure(
@@ -267,8 +274,8 @@ class SourceWorker(threading.Thread):
                         True,
                     )
                 )
-            command, kind, resumes_at = log.command, log.kind, log.resumes_at
-            if board.partial_journal and kind == "journal":
+            command, kind, resumes_at, history = log.command, log.kind, log.resumes_at, log.history
+            if board.partial_journal and kind == "journal" and not follows:
                 self._note("warn", probe.partial(board.user))
             self._note_restart(board)
         elif self.cfg.read == "file" and self.cfg.connection == "local":
@@ -322,6 +329,12 @@ class SourceWorker(threading.Thread):
         self._process = None
         drain.join(1.0)
         err = b"".join(said).decode("utf-8", "replace")
+        if history and process.returncode == 0 and not self._stop_event.is_set():
+            if not streamed and board is not None and board.journal_cursor:
+                # Nothing since the history's start: follow from the boot's latest entry.
+                self._save(board.journal_cursor)
+            self._read_history = True
+            return "follow"
         return self._ended(process.returncode, err, streamed, kind)
 
     def _replay(self) -> Outcome:
