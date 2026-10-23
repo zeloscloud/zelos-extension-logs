@@ -763,6 +763,23 @@ class TestResume:
         assert " -n 0" not in second
         assert [r["message"] for r in rig.programs()] == ["a", "b", "c"]
 
+    def test_with_new_lines_only_a_dropped_connection_resumes_where_it_stopped(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        rig = make(
+            source(advanced={"history": "new"}),
+            probe_process(),
+            journal_session(entry(CURSOR_1, 400, "a"), entry(CURSOR_2, 450, "b")),
+            probe_process(),
+            journal_session(entry(CURSOR_3, 460, "c")),
+        )
+
+        rig.run_until(lambda: rig.worker.health.reconnects >= 2)
+
+        assert " -n 0" in rig.processes.command(1)
+        assert f"--cursor='{CURSOR_2}'" in rig.processes.command(3)
+        assert [r["message"] for r in rig.programs()] == ["a", "b", "c"]
+
     def test_the_first_entry_equal_to_the_cursor_is_dropped(self, make: Callable[..., Rig]) -> None:
         rig = make(
             None,

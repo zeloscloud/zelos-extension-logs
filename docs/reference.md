@@ -45,7 +45,8 @@ Set **Time** to **When the line arrives** to place every row by arrival.
 ### History and resume
 
 - **First start**: the journal sends the current boot, as far back as the agent keeps data: its data retention, or an hour before the board's clock when the agent does not say. With **History** set to **New lines only**, it starts at the next entry.
-- **A dropped connection, a reboot or an agent restart**: the journal resumes at the last position Logs saved, so nothing the journal still holds is lost. Logs saves the position every 5 s and when it stops, so an extension that ends without stopping can record up to its last 5 s again. The position is kept in the extension's data directory, which updates keep. A position older than the agent keeps data is not resumed: the source starts with the history again.
+- **A dropped connection or a reboot of the board**: the journal resumes where it stopped, so nothing the journal still holds is lost.
+- **An agent restart**: the journal resumes at the last position Logs saved, unless **History** is **New lines only**, which starts at the next entry. Logs saves the position every 5 s and when it stops, so an extension that ends without stopping can record up to its last 5 s again. The position is kept in the extension's data directory, which updates keep. A position older than the agent keeps data is not resumed: the source starts with the history again.
 - **logread, files and commands** start at new lines. After a drop, a note says how long the source was away.
 - **A reboot** writes the note `[logs] device restarted`.
 
