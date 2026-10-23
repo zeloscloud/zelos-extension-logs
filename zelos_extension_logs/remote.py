@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
@@ -18,6 +19,8 @@ from .config import SourceConfig
 
 # How often a wrapped session's stdin gets a newline on Windows.
 _WAKE_S = 0.5
+# What `run` keeps of each stream it reads; Run Command shows at most 2,000 lines of it.
+_KEEP_BYTES = 1 << 20
 # The keys ssh offers when nothing names one. Naming the access key with -i stops ssh from offering
 # these by itself, so they are named too.
 _DEFAULT_KEYS = ("id_ed25519", "id_ecdsa", "id_rsa")
@@ -203,19 +206,55 @@ def terminate(process: subprocess.Popen[bytes], timeout: float = 1.0) -> None:
     process.wait()
 
 
+@dataclass(frozen=True, slots=True)
+class Finished:
+    """How a command ended, and the last of what it printed."""
+
+    returncode: int
+    stdout: bytes
+    stderr: bytes
+    # The command printed more than `run` keeps: the start of its stdout is gone.
+    cut: bool
+
+
+class _Tail(threading.Thread):
+    """Reads a pipe to its end on its own thread, keeping about its last `_KEEP_BYTES`."""
+
+    def __init__(self, pipe: IO[bytes]) -> None:
+        super().__init__(name="run-output", daemon=True)
+        self._pipe = pipe
+        self._chunks: deque[bytes] = deque()
+        self._size = 0
+        self.cut = False
+        self.start()
+
+    def run(self) -> None:
+        with self._pipe:
+            while chunk := os.read(self._pipe.fileno(), 65536):
+                self._chunks.append(chunk)
+                self._size += len(chunk)
+                while self._size - len(self._chunks[0]) >= _KEEP_BYTES:
+                    self._size -= len(self._chunks.popleft())
+                    self.cut = True
+
+    def data(self) -> bytes:
+        return b"".join(self._chunks)
+
+
 def run(
     argv: list[str] | str,
     timeout: float,
     *,
     hold_stdin: bool = False,
     stderr: int = subprocess.PIPE,
-) -> subprocess.CompletedProcess[bytes] | None:
+) -> Finished | None:
     """Run `argv` to its end, or stop it and what it started after `timeout` and return None.
 
     With `hold_stdin`, its stdin stays open until then, as a wrapped remote command needs, and
     `wake` keeps it moving; without, it reads nothing. `stderr` is Popen's: STDOUT puts a local
     command's errors in its output.
     """
+    deadline = time.monotonic() + timeout
     with contextlib.ExitStack() as held:
         stdin = subprocess.DEVNULL
         session: IO[bytes] | None = None
@@ -226,14 +265,21 @@ def run(
         process = popen(argv, stdin=stdin, stdout=subprocess.PIPE, stderr=stderr)
         if session is not None:
             wake(process, session)
+        assert process.stdout is not None
+        out = _Tail(process.stdout)
+        err = _Tail(process.stderr) if process.stderr is not None else None
+        tails = [t for t in (out, err) if t is not None]
         try:
-            out, err = process.communicate(timeout=timeout)
+            process.wait(max(0.0, deadline - time.monotonic()))
+            for tail in tails:
+                tail.join(max(0.0, deadline - time.monotonic()))
+            if any(tail.is_alive() for tail in tails):
+                raise subprocess.TimeoutExpired(argv, timeout)
         except subprocess.TimeoutExpired:
             held.close()
             terminate(process, timeout=0.5)
-            process.communicate()
             return None
-    return subprocess.CompletedProcess(argv, process.returncode, out, err)
+    return Finished(process.returncode, out.data(), err.data() if err else b"", out.cut)
 
 
 @dataclass(frozen=True, slots=True)

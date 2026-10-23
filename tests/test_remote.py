@@ -609,6 +609,29 @@ class TestPopen:
         assert (out, err) == (b"hi\n", b"err\n")
 
 
+class TestRun:
+    LINES = "[print(f'{i:05d}', flush=True) for i in range(30000)]"
+
+    def test_a_long_output_keeps_its_end(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(remote, "_KEEP_BYTES", 1000)
+
+        done = remote.run([sys.executable, "-c", self.LINES], timeout=30)
+
+        assert done is not None
+        assert done.cut
+        assert done.stdout.splitlines()[-1] == b"29999"
+        # 180 kB printed; what is kept is the limit and at most one read more.
+        assert len(done.stdout) <= 1000 + 65536
+
+    def test_a_short_output_is_whole(self) -> None:
+        done = remote.run([sys.executable, "-c", "print('one'); print('two')"], timeout=30)
+
+        assert done is not None
+        assert not done.cut
+        assert done.stdout.splitlines() == [b"one", b"two"]
+        assert done.returncode == 0
+
+
 class Running:
     """A process for `wake`: running until `end`."""
 

@@ -264,18 +264,20 @@ class Capture:
         returncode: int = 0,
         *,
         times_out: bool = False,
+        cut: bool = False,
     ) -> None:
+        self.cut = cut
         self.stdout = stdout.encode() if isinstance(stdout, str) else stdout
         self.stderr = stderr.encode() if isinstance(stderr, str) else stderr
         self.returncode = returncode
         self.times_out = times_out
         self.calls: list[tuple[Any, dict[str, Any]]] = []
 
-    def __call__(self, argv: Any, **kwargs: Any) -> subprocess.CompletedProcess[bytes] | None:
+    def __call__(self, argv: Any, **kwargs: Any) -> remote.Finished | None:
         self.calls.append((argv, kwargs))
         if self.times_out:
             return None
-        return subprocess.CompletedProcess(argv, self.returncode, self.stdout, self.stderr)
+        return remote.Finished(self.returncode, self.stdout, self.stderr, self.cut)
 
 
 class TestTestConnection:
@@ -668,6 +670,18 @@ class TestRunCommand:
         assert len(result["output"]) == 2000
         assert result["output"][0] == "501"
         assert result["output"][-1] == "2500"
+        assert result["truncated"] is True
+
+    def test_output_cut_by_its_length_starts_at_a_whole_line(
+        self, add_worker: Callable[..., SourceWorker], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        add_worker({"connection": "local", "name": "dev"})
+        # What run keeps of a long output starts wherever a read ended, mid-line.
+        monkeypatch.setattr(remote, "run", Capture("998\n00999\n01000\n", cut=True))
+
+        result = run("run_command", command="seq 1000")
+
+        assert result["output"] == ["00999", "01000"]
         assert result["truncated"] is True
 
     def test_bytes_that_are_not_text_are_replaced(
