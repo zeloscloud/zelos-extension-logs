@@ -164,6 +164,7 @@ class SourceWorker(threading.Thread):
         self._sample: deque[str] = deque(maxlen=_SAMPLE_LINES)
         self._lock = threading.Lock()
         self._cursor_key = f"{cfg.name}\0{cfg.connection}\0{cfg.host or ''}"
+        self._run_cursor = ""
         self._dropped_at: int | None = None
         self._user = "this user"
         self._refused = False
@@ -525,6 +526,9 @@ class SourceWorker(threading.Thread):
         return self.cfg.host or "this computer"
 
     def _resume_cursor(self) -> str | None:
+        # Within a run the journal goes on where it stopped; History decides where a run starts.
+        if self._run_cursor:
+            return self._run_cursor
         saved = self._cursors.get(self._cursor_key)
         if not saved or self.cfg.history == "new":
             return None
@@ -539,6 +543,7 @@ class SourceWorker(threading.Thread):
         return cursor if isinstance(cursor, str) and cursor else None
 
     def _save(self, cursor: str) -> None:
+        self._run_cursor = cursor
         try:
             self._cursors.put(
                 self._cursor_key,
