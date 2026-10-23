@@ -25,7 +25,7 @@ from tests.conftest import (
     Recording,
     wait_until,
 )
-from zelos_extension_logs import config, demo, probe, remote, worker
+from zelos_extension_logs import config, demo, oslog, probe, remote, worker
 from zelos_extension_logs.worker import Cursors, SourceWorker, state_of
 
 S = 1_000_000_000
@@ -1216,20 +1216,6 @@ class TestFailures:
         rig.run_until(lambda: len(rig.processes.started) == 3)
 
         assert len(rig.notes()) == 1
-
-    def test_the_system_log_is_read_on_linux_only(
-        self, make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr("sys.platform", "darwin")
-        rig = make(local(read="system"))
-
-        rig.run_until("waiting")
-
-        assert rig.worker.health.message == (
-            "The system log is read on Linux. Read a file or a command here."
-        )
-        assert rig.notes("dev") == [("error", f"[logs] {rig.worker.health.message}")]
-        assert rig.processes.argvs == []
 
     def test_a_non_root_user_is_told_the_journal_is_partial(self, make: Callable[..., Rig]) -> None:
         rig = make(
@@ -2542,3 +2528,118 @@ class TestKernel:
         rig.run_until(lambda: rig.worker.health.lines == 1)
 
         assert [r["CPUs"] for r in rig.recording.events()["bench-1/kernel"]] == [4]
+
+
+def mac_entry(message: str, kind: str = "Default", stamp: str = "12:30:55.030238") -> str:
+    return (
+        json.dumps(
+            {
+                "eventType": "logEvent",
+                "messageType": kind,
+                "timestamp": f"2026-10-23 {stamp}-0700",
+                "processImagePath": "/usr/libexec/rapportd",
+                "eventMessage": message,
+            }
+        )
+        + "\n"
+    )
+
+
+class TestThisComputersLog:
+    """On macOS and Windows, the system log of this computer is its own log, not a journal."""
+
+    # 2026-10-23 12:30:55.030238 -0700.
+    STAMP_S = 1_792_783_855.030238
+
+    def test_a_mac_follows_its_unified_log_with_no_probe(
+        self, make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("sys.platform", "darwin")
+        rig = make(
+            local(read="system"),
+            FakeProcess(mac_entry("started") + mac_entry("link down", "Error", "12:30:56.5")),
+        )
+
+        rig.run_until("waiting")
+
+        assert rig.processes.command(0) == oslog.MACOS
+        assert [(r["name"], r["level"], r["message"]) for r in rig.programs("dev")] == [
+            ("rapportd", "info", "started"),
+            ("rapportd", "error", "link down"),
+        ]
+        times = [r[TIME] for r in rig.programs("dev")]
+        assert times == pytest.approx([self.STAMP_S, 1_792_783_856.5], abs=1e-6)
+        assert rig.worker.health.reading == "unified_log"
+
+    def test_an_activity_is_left_out(
+        self, make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("sys.platform", "darwin")
+        activity = json.loads(mac_entry("state update")) | {"eventType": "activityCreateEvent"}
+        rig = make(local(read="system"), FakeProcess(json.dumps(activity) + "\n" + mac_entry("a")))
+
+        rig.run_until("waiting")
+
+        assert [r["message"] for r in rig.programs("dev")] == ["a"]
+
+    def test_entries_stamped_alike_keep_their_order(
+        self, make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("sys.platform", "darwin")
+        rig = make(
+            local(read="system"), FakeProcess(mac_entry("a") + mac_entry("b") + mac_entry("c"))
+        )
+
+        rig.run_until("waiting")
+
+        rows = rig.programs("dev")
+        assert [r["message"] for r in rows] == ["a", "b", "c"]
+        assert [round((r[TIME] - self.STAMP_S) * 1e6) for r in rows] == [0, 1, 2]
+
+    def test_what_the_log_command_says_itself_is_a_note(
+        self, make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("sys.platform", "darwin")
+        rig = make(local(read="system"), FakeProcess("log: Cannot run while sandboxed\n"))
+
+        rig.run_until("waiting")
+
+        assert ("warn", "[logs] log: Cannot run while sandboxed") in rig.notes("dev")
+
+    def test_time_from_the_arrival_ignores_the_stamps(
+        self, make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("sys.platform", "darwin")
+        rig = make(
+            local(read="system", advanced={"time_source": "arrival"}),
+            FakeProcess(mac_entry("a")),
+        )
+
+        rig.run_until("waiting")
+
+        assert [round(r[TIME]) for r in rig.programs("dev")] == [CLOCK_S]
+
+    def test_windows_follows_its_event_log(
+        self, make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("sys.platform", "win32")
+        record = {
+            "time": "2026-10-23T19:30:55.0302380Z",
+            "level": 3,
+            "source": "Service Control Manager",
+            "message": "A timeout was reached.\r\nThe service did not respond.",
+        }
+        rig = make(local(read="system"), FakeProcess(json.dumps(record) + "\n"))
+
+        rig.run_until("waiting")
+
+        assert rig.processes.command(0) == oslog.WINDOWS
+        assert [(r["name"], r["level"], r["message"]) for r in rig.programs("dev")] == [
+            (
+                "Service Control Manager",
+                "warn",
+                "A timeout was reached.\nThe service did not respond.",
+            )
+        ]
+        assert [r[TIME] for r in rig.programs("dev")] == pytest.approx([self.STAMP_S], abs=1e-6)
+        assert rig.worker.health.reading == "event_log"

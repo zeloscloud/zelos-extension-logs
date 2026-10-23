@@ -125,7 +125,7 @@ The config holds a list of `sources` and one `advanced` group.
 
 **Advanced (all sources)**: Prefix (default `Logs`) and Extension log level, how much Logs reports about itself.
 
-The system log of **This computer** is read on Linux. On macOS and Windows, read a file or a command.
+On **This computer**, System log reads the journal or syslog on Linux, the unified log on macOS (as `log stream` prints it), and the System and Application event logs on Windows. On macOS and Windows it starts at the next entry, and each row keeps the entry's level, program and time.
 
 ### Examples
 
@@ -148,7 +148,7 @@ Every action except List Hosts, Auto-configure, Test Connection, Show Access Key
 | Action | What it does | Read-only |
 |---|---|---|
 | List Hosts | Lists the Hosts in this computer's SSH config, for the **Host** field. | yes |
-| Auto-configure | Keeps the configured sources and adds this computer's system log on Linux, or the demo device when there is nothing else. | yes |
+| Auto-configure | Keeps the configured sources and adds this computer's system log. | yes |
 | Test Connection | Connects to a host, with a source's SSH port, Key file, Host key check and Extra ssh options, and says what it will read, or what to fix. | no |
 | Show Access Key | Returns this computer's key, made on first use, and the line that adds it to a board, limited to running commands. | no |
 | Convert Log File | Converts a saved log file to a trace (`.trz`), also while the extension is stopped. Takes `input_file`, `output_file`, `overwrite`, `time_zone`, `year` and `start_time`, and returns the trace and the lines read. | no |

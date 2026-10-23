@@ -1,17 +1,17 @@
 {
   "type": "object",
   "title": "Logs",
-  "description": "Record the logs of Linux boards over SSH, any log file, or the output of any command.",
+  "description": "Record the system log of a board over SSH or of this computer, any log file, or the output of any command.",
   "ui:options": { "autoconfig": "Logs/auto_config" },
   "properties": {
     "sources": {
       "type": "array", "title": "Sources", "minItems": 1, "default": [],
-      "description": "One entry for each log to record. Auto-configure adds this computer's system log on Linux, or the demo device to an empty list.",
+      "description": "One entry for each log to record. Auto-configure adds this computer's system log.",
       "items": {
         "type": "object", "title": "Source",
         "properties": {
           "connection": { "type": "string", "title": "Connection", "enum": ["ssh", "local", "demo"], "ui:enumNames": ["SSH", "This computer", "Demo device"], "default": "ssh" },
-          "read": { "type": "string", "title": "Read", "enum": ["system", "file", "command"], "ui:enumNames": ["System log", "File", "Command"], "default": "system", "description": "System log reads the journal, or syslog where there is none, on Linux." },
+          "read": { "type": "string", "title": "Read", "enum": ["system", "file", "command"], "ui:enumNames": ["System log", "File", "Command"], "default": "system", "description": "System log reads the journal or syslog on Linux, the unified log on macOS, and the event log on Windows." },
           "name": { "type": "string", "title": "Name", "description": "How this source appears in the trace. Empty names it after where it reads, such as bench_local. Letters, digits, spaces, _ and -.","pattern": "^[A-Za-z0-9 _-]*$", "maxLength": 64 }
         },
         "required": ["connection"],

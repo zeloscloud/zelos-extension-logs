@@ -108,19 +108,18 @@ class TestAutoConfig:
     # What a new form holds: one SSH source with nothing typed in, and the defaults it fills in.
     BLANK = {"connection": "ssh", "read": "system", "advanced": {"host_key_policy": "auto"}}
 
-    def test_on_this_platform(self) -> None:
+    def test_adds_this_computers_system_log(self) -> None:
         result = run("auto_config")
 
-        if sys.platform == "linux":
-            assert result["config"] == {"sources": [self.LOCAL]}
-            assert result["message"] == "Added this computer's system log."
-        else:
-            assert result["config"] == {"sources": [{"connection": "demo"}]}
-            assert result["message"] == "The system log is read on Linux; added the demo device."
+        assert result["config"] == {"sources": [self.LOCAL]}
+        assert result["message"] == "Added this computer's system log."
         assert result["status"] == "success"
 
-    def test_linux_adds_this_computers_system_log(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(sys, "platform", "linux")
+    @pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
+    def test_on_every_platform_beside_what_there_is(
+        self, monkeypatch: pytest.MonkeyPatch, platform: str
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", platform)
         ssh = {"connection": "ssh", "host": "root@bench-1"}
 
         result = run("auto_config", config={"sources": [ssh]})
@@ -128,68 +127,32 @@ class TestAutoConfig:
         assert result["config"] == {"sources": [ssh, self.LOCAL]}
         assert result["message"] == "Added this computer's system log."
 
-    def test_linux_does_not_add_it_twice(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(sys, "platform", "linux")
-
+    def test_does_not_add_it_twice(self) -> None:
         result = run("auto_config", config={"sources": [{"connection": "local"}]})
 
         assert result["config"] == {"sources": [{"connection": "local"}]}
         assert result["message"] == "Nothing to add."
 
-    def test_a_local_file_is_not_the_system_log(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(sys, "platform", "linux")
+    def test_a_local_file_is_not_the_system_log(self) -> None:
         local_file = {"connection": "local", "read": "file", "path": "/var/log/x.log"}
 
         result = run("auto_config", config={"sources": [local_file]})
 
         assert result["config"]["sources"] == [local_file, self.LOCAL]
 
-    def test_elsewhere_it_keeps_what_there_is(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(sys, "platform", "darwin")
-        ssh = {"connection": "ssh", "host": "root@bench-1"}
-
-        result = run("auto_config", config={"sources": [ssh]})
-
-        assert result["config"] == {"sources": [ssh]}
-        assert result["message"] == "Nothing to add."
-
-    def test_elsewhere_with_no_sources_it_adds_the_demo(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(sys, "platform", "win32")
-
-        result = run("auto_config", config={"sources": []})
-
-        assert result["config"] == {"sources": [{"connection": "demo"}]}
-
-    def test_the_blank_source_of_a_new_form_makes_way_for_the_demo(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(sys, "platform", "darwin")
-
-        result = run("auto_config", config={"sources": [self.BLANK]})
-
-        assert result["config"] == {"sources": [{"connection": "demo"}]}
-
-    def test_on_linux_the_blank_source_makes_way_for_the_system_log(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(sys, "platform", "linux")
-
+    def test_the_blank_source_of_a_new_form_makes_way_for_the_system_log(self) -> None:
         result = run("auto_config", config={"sources": [self.BLANK]})
 
         assert result["config"] == {"sources": [self.LOCAL]}
 
-    def test_a_source_with_anything_typed_in_is_kept(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(sys, "platform", "darwin")
+    def test_a_source_with_anything_typed_in_is_kept(self) -> None:
         named = {**self.BLANK, "name": "bench"}
 
         result = run("auto_config", config={"sources": [named]})
 
-        assert result["config"] == {"sources": [named]}
+        assert result["config"] == {"sources": [named, self.LOCAL]}
 
-    def test_does_not_change_what_it_was_given(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(sys, "platform", "linux")
+    def test_does_not_change_what_it_was_given(self) -> None:
         given = {"sources": [{"connection": "ssh", "host": "h"}]}
 
         run("auto_config", config=given)
@@ -197,11 +160,7 @@ class TestAutoConfig:
         assert given == {"sources": [{"connection": "ssh", "host": "h"}]}
 
     @pytest.mark.parametrize("given", [None, {}, {"sources": None}])
-    def test_no_configuration_yet(
-        self, monkeypatch: pytest.MonkeyPatch, given: dict[str, Any] | None
-    ) -> None:
-        monkeypatch.setattr(sys, "platform", "linux")
-
+    def test_no_configuration_yet(self, given: dict[str, Any] | None) -> None:
         result = run("auto_config", config=given) if given is not None else run("auto_config")
 
         assert result["config"] == {"sources": [self.LOCAL]}

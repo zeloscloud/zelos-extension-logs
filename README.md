@@ -17,6 +17,7 @@ Record the logs of your Linux boards in Zelos, on the same timeline as everythin
 | | |
 |---|---|
 | **Linux boards** | Any board `ssh` reaches: the journal (`journalctl`), else BusyBox or OpenWrt `logread`, else `/var/log/messages` or `/var/log/syslog` |
+| **This computer** | Its system log: the journal or syslog on Linux, the unified log on macOS, the event log on Windows |
 | **Files and commands** | Any file, followed through rotation, and any command that prints lines, such as `dmesg -w`, `adb logcat` or `docker logs -f`, on a board or on this computer |
 | **Saved logs** | Plain, gzip, bzip2, xz or zstd log files |
 | **Log formats** | The journal, syslog, the Linux kernel, Android logcat, and common logging libraries for C and C++, Rust, Go, Python and Java. [zelos-log-lines](https://pypi.org/project/zelos-log-lines/) lists every format. |

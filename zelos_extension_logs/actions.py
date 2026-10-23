@@ -2,7 +2,6 @@
 
 import os
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -79,8 +78,7 @@ def list_hosts() -> dict[str, Any]:
 
 @action(
     "Auto-configure",
-    "Keep the configured sources and add this computer's system log on Linux, or the demo device "
-    "when there are no sources and no system log here.",
+    "Keep the configured sources and add this computer's system log.",
     timeout=_STANDALONE_TIMEOUT_S,
     standalone=True,
     read_only=True,
@@ -94,14 +92,10 @@ def auto_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
         and s.get("read", "system") == "system"
         for s in sources
     )
-    if sys.platform == "linux" and not has_local:
-        sources.append({"connection": "local", "read": "system"})
-        message = "Added this computer's system log."
-    elif sources:
-        message = "Nothing to add."
-    else:
-        sources = [{"connection": "demo"}]
-        message = "The system log is read on Linux; added the demo device."
+    if has_local:
+        return {"status": "success", "config": {"sources": sources}, "message": "Nothing to add."}
+    sources.append({"connection": "local", "read": "system"})
+    message = "Added this computer's system log."
     return {"status": "success", "config": {"sources": sources}, "message": message}
 
 

@@ -15,11 +15,12 @@ from pathlib import Path
 from typing import BinaryIO, Literal
 
 import zelos_sdk
+from zelos_log_lines.clock import US
 from zelos_log_lines.lines import Line
 from zelos_log_lines.records import Level, LogRecord
 from zelos_log_lines.stream import LogStream, StreamState
 
-from . import demo, journal, probe, remote
+from . import demo, journal, oslog, probe, remote
 from .config import SourceConfig
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,8 @@ _NO_PERMISSION = "insufficient permissions"
 _BOOT_ID = Path("/proc/sys/kernel/random/boot_id")
 # What the probe says of a file that cannot be followed, as the local follower's error says it.
 _UNREADABLE = {"directory": "Is a directory", "unreadable": "Permission denied"}
+# What the system log of this computer is where it is no journal or syslog.
+_OS_LOGS = {"darwin": "unified_log", "win32": "event_log"}
 
 State = Literal["starting", "connecting", "streaming", "waiting", "ended", "stopped"]
 # How a session ended: try again soon, try again once a minute, never (a command that finished), or
@@ -247,13 +250,10 @@ class SourceWorker(threading.Thread):
         board: probe.Probe | None = None
         resumes_at: str | None = None
         history = False
-        if self.cfg.read == "system":
-            if self.cfg.connection == "local" and sys.platform != "linux":
-                return self._failed(
-                    remote.Failure(
-                        "The system log is read on Linux. Read a file or a command here.", True
-                    )
-                )
+        native = oslog.command(sys.platform) if self.cfg.connection == "local" else None
+        if self.cfg.read == "system" and native is not None:
+            command, kind = native, _OS_LOGS[sys.platform]
+        elif self.cfg.read == "system":
             probed = self._probe()
             if isinstance(probed, remote.Failure):
                 return self._failed(probed)
@@ -305,7 +305,7 @@ class SourceWorker(threading.Thread):
                 assert self.cfg.command is not None
                 command, kind = self.cfg.command, "command"
         self.health.reading = kind
-        if kind != "journal":
+        if kind not in ("journal", *_OS_LOGS.values()):
             self._text_start(board)
         gap = self._note_gap(kind)
         process = self._start(command)
@@ -320,6 +320,8 @@ class SourceWorker(threading.Thread):
             self._connected()
         if kind == "journal":
             streamed = self._follow_journal(self._chunks(process), board, resumes_at)
+        elif kind in _OS_LOGS.values():
+            streamed = self._follow_entries(self._chunks(process))
         else:
             streamed = self._follow_text(self._chunks(process), gap)
         remote.terminate(process, timeout=0.5)
@@ -503,6 +505,46 @@ class SourceWorker(threading.Thread):
                 self._save(cursor)
         if cursor:
             self._save(cursor)
+        return streamed
+
+    def _follow_entries(self, chunks: Iterator[tuple[bytes, int]]) -> bool:
+        """This computer's log on macOS or Windows, one JSON entry a line."""
+        pending = b""
+        streamed = False
+        # The last entry's own time, and where it was placed.
+        last: tuple[int, int] | None = None
+        for chunk, host_ns in chunks:
+            pending += chunk
+            *complete, pending = pending.split(b"\n")
+            for raw in complete:
+                text = raw.decode("utf-8", "replace").strip()
+                if not text:
+                    continue
+                try:
+                    record = json.loads(text)
+                except ValueError:
+                    record = None
+                if not isinstance(record, dict):
+                    # The log command's own words, such as why it cannot read.
+                    self._note("warn", text, host_ns)
+                    continue
+                entry = oslog.read(sys.platform, record)
+                if entry is None:
+                    continue
+                streamed = True
+                time_ns = None
+                if self.cfg.time_source == "device":
+                    # Entries stamped alike keep their order a microsecond apart.
+                    tied = last is not None and entry.time_ns == last[0]
+                    time_ns = last[1] + US if last is not None and tied else entry.time_ns
+                    last = (entry.time_ns, time_ns)
+                self._stream.write(
+                    entry.message,
+                    host_ns,
+                    default_level=entry.level,
+                    name=entry.program,
+                    time_ns=time_ns,
+                )
         return streamed
 
     def _journal_text(self, text: str, host_ns: int) -> None:
