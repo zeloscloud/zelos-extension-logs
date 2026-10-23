@@ -160,7 +160,7 @@ def test_every_default_in_the_schema_is_allowed_by_it() -> None:
             Draft7Validator(field).validate(field["default"])
             checked.add(name)
 
-    assert checked >= {"connection", "read", "host_key_policy", "history", "time_source"}
+    assert checked >= {"connection", "read", "host_key_policy", "history"}
     assert checked >= {"values", "advanced", "prefix", "log_level"}
 
 

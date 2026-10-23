@@ -45,7 +45,6 @@ class TestDefaults:
             host_key_policy="auto",
             ssh_options=(),
             history="kept",
-            time_source="device",
             values=False,
             kernel_values=False,
         )
@@ -63,7 +62,6 @@ class TestDefaults:
             None,
         )
         assert cfg.history == "kept"
-        assert cfg.time_source == "device"
         assert cfg.host_key_policy == "auto"
 
     def test_command_over_ssh(self) -> None:
@@ -109,7 +107,6 @@ class TestDefaults:
                     "host_key_policy": "strict",
                     "ssh_options": '-J jump -o "ProxyCommand ssh -W %h:%p other"',
                     "history": "new",
-                    "time_source": "arrival",
                 },
             }
         ).sources
@@ -119,7 +116,14 @@ class TestDefaults:
         assert cfg.host_key_policy == "strict"
         assert cfg.ssh_options == ("-J", "jump", "-o", "ProxyCommand ssh -W %h:%p other")
         assert cfg.history == "new"
-        assert cfg.time_source == "arrival"
+
+    def test_a_saved_time_setting_is_ignored(self) -> None:
+        # Time was a setting; a config saved with it still loads.
+        (cfg,) = parse_sources(
+            {"connection": "ssh", "host": "bench-1", "advanced": {"time_source": "arrival"}}
+        ).sources
+
+        assert cfg.host == "bench-1"
 
     def test_empty_key_path_is_no_key(self) -> None:
         (cfg,) = parse_sources(

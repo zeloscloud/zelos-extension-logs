@@ -167,7 +167,6 @@ class SourceWorker(threading.Thread):
             source,
             cfg.name,
             notes=NOTES,
-            device_time=cfg.time_source == "device",
             values=cfg.values,
             kernel_values=cfg.kernel_values,
             on_line=self._on_line,
@@ -492,9 +491,7 @@ class SourceWorker(threading.Thread):
                 streamed = True
                 cursor = entry.cursor
                 self.health.boot_id = entry.boot_id
-                time_ns = (
-                    None if self.cfg.time_source == "arrival" else placement.place(entry, host_ns)
-                )
+                time_ns = placement.place(entry, host_ns)
                 # The stream reads the entry's message, level, program and source line.
                 self._stream.write(raw.decode("utf-8", "replace"), host_ns, time_ns=time_ns)
                 if time_ns is not None:
@@ -532,12 +529,10 @@ class SourceWorker(threading.Thread):
                 if entry is None:
                     continue
                 streamed = True
-                time_ns = None
-                if self.cfg.time_source == "device":
-                    # Entries stamped alike keep their order a microsecond apart.
-                    tied = last is not None and entry.time_ns == last[0]
-                    time_ns = last[1] + US if last is not None and tied else entry.time_ns
-                    last = (entry.time_ns, time_ns)
+                # Entries stamped alike keep their order a microsecond apart.
+                tied = last is not None and entry.time_ns == last[0]
+                time_ns = last[1] + US if last is not None and tied else entry.time_ns
+                last = (entry.time_ns, time_ns)
                 self._stream.write(
                     entry.message,
                     host_ns,

@@ -327,19 +327,6 @@ class TestJournalFlow:
 
         assert [round(r[TIME] - CLOCK_S, 3) for r in rig.programs()] == [-99.6, -0.1]
 
-    def test_time_source_arrival_ignores_the_boards_clocks(self, make: Callable[..., Rig]) -> None:
-        rig = make(
-            source(advanced={"time_source": "arrival"}),
-            probe_process(),
-            journal_session(entry(CURSOR_1, 400, "a"), entry(CURSOR_2, 450, "b")),
-        )
-
-        rig.run_until("waiting")
-
-        # One read, so one arrival: 1 µs apart, the rows keep their order.
-        assert [round((r[TIME] - CLOCK_S) * 1e6) for r in rig.programs()] == [0, 1]
-        assert rig.worker.health.last_line_ns == CLOCK_S * S
-
     def test_the_stream_gets_newlines_on_windows_and_the_probe_does_not(
         self, make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1624,24 +1611,6 @@ class TestText:
         times = [r[TIME] for r in rig.programs("dev")]
         assert times == [pytest.approx(CLOCK_S), pytest.approx(CLOCK_S + 10.0)]
 
-    def test_time_source_arrival_places_a_line_when_it_arrives(
-        self, make: Callable[..., Rig]
-    ) -> None:
-        stream = FakeProcess(hold_open=True)
-        rig = make(command("dmesg -w", advanced={"time_source": "arrival"}), stream)
-        rig.start()
-        try:
-            stream.send("[    1.000000] usb 1-1: new device\n")
-            wait_until(lambda: rig.worker.health.lines == 1)
-            rig.clock.advance(10.5)
-            stream.send("[   11.000000] usb 1-1: reset\n")
-            wait_until(lambda: rig.worker.health.lines == 2)
-        finally:
-            rig.stop()
-
-        times = [r[TIME] for r in rig.programs("dev")]
-        assert times == [pytest.approx(CLOCK_S), pytest.approx(CLOCK_S + 10.5)]
-
     def test_a_device_restart_is_noted(self, make: Callable[..., Rig]) -> None:
         stream = FakeProcess(hold_open=True)
         rig = make(command("dmesg -w"), stream)
@@ -2605,19 +2574,6 @@ class TestThisComputersLog:
         rig.run_until("waiting")
 
         assert ("warn", "[logs] log: Cannot run while sandboxed") in rig.notes("dev")
-
-    def test_time_from_the_arrival_ignores_the_stamps(
-        self, make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr("sys.platform", "darwin")
-        rig = make(
-            local(read="system", advanced={"time_source": "arrival"}),
-            FakeProcess(mac_entry("a")),
-        )
-
-        rig.run_until("waiting")
-
-        assert [round(r[TIME]) for r in rig.programs("dev")] == [CLOCK_S]
 
     def test_windows_follows_its_event_log(
         self, make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch
