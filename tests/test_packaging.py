@@ -101,6 +101,21 @@ def test_the_schema_names_actions_that_exist() -> None:
         assert function._action.standalone is True
 
 
+def test_a_branch_keeps_its_fields_labels() -> None:
+    """The form keeps one label list per field for every branch: a branch's own list relabels the
+    field everywhere, and a branch's choices must start the field's for the labels to fit."""
+    item = SCHEMA["properties"]["sources"]["items"]
+    for key, dependency in item["dependencies"].items():
+        for branch in dependency["oneOf"]:
+            for name, field in branch["properties"].items():
+                if name == key:
+                    continue
+                assert "ui:enumNames" not in field, (key, name)
+                if "enum" in field:
+                    choices = item["properties"][name]["enum"]
+                    assert field["enum"] == choices[: len(field["enum"])], (key, name)
+
+
 def _defaults(node: object, name: str = "") -> Iterator[tuple[str, dict[str, Any]]]:
     """Every field in the schema that has a default, in every branch, with its name."""
     if isinstance(node, dict):
