@@ -10,7 +10,7 @@ Record logs in Zelos, on the same timeline as everything else you measure: a dev
 - 🔁 **Picks up where it stopped**: the journal resumes after a drop or a reboot.
 - 🗂️ **Any log**: a file, a command's output, or a saved log to convert to a trace.
 
-[![Auto-configure adds the demo board and Save & Start runs it. Its log, dragged onto the layout, fills a Log panel line by line, a warning and an error among them, and the pump's rpm, dragged below, plots live.](assets/readme/quickstart.avif)](assets/readme/quickstart.mp4)
+[![Read from set to Demo device, then Save & Start. The demo's log, dragged onto the layout, fills a Log panel line by line, a warning and an error among them, and the pump's rpm, dragged below, plots live.](assets/readme/quickstart.avif)](assets/readme/quickstart.mp4)
 
 ## Works with
 
