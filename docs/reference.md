@@ -56,7 +56,7 @@ Logs runs your system's `ssh` with `BatchMode`, so it never asks for a password.
 
 - **Show Access Key** makes a key for this computer, kept in the extension's data directory, and gives the line that adds it to a board. A headless agent uses it with no person's keys on the machine. `ssh` still offers your SSH agent's keys and your default keys too.
 - **Key file** uses one private key and nothing else.
-- **Host key check** trusts the board's key by default, because a reflashed board gets a new one. **Check known_hosts** refuses a key it does not know.
+- **Host key check** trusts any key by default, because a reflashed board gets a new one. **Check known_hosts** refuses a key it does not know.
 - **Extra ssh options** go first on the `ssh` command line, such as `-J bastion`.
 
 A user that is not root and not in `systemd-journal` sees only its own journal entries. Logs says so, with the line that fixes it: `sudo usermod -aG systemd-journal <user>`.
@@ -89,9 +89,9 @@ The **Convert Log File** action converts one file from the Action panel, a noteb
 uv run main.py replay app.log
 ```
 
-`replay` writes the file's lines into the agent at the pace they were printed, the first one now. Ctrl-C stops it, and it prints how many lines it replayed.
+`replay` writes the file's lines into the agent at the pace they were printed, starting now. Ctrl-C stops it, and it prints how many lines it replayed.
 
-A replay source does the same while the extension runs: on **This computer**, set **Read** to **A saved file, replayed**. It replays the file once, then ends. It replays again when the extension restarts.
+A replay source does the same while the extension runs: on **This computer**, set **Read** to **Saved file, replayed**. It replays the file once, then ends. It replays again when the extension restarts.
 
 ### Where each row goes
 
@@ -115,7 +115,7 @@ The config holds a list of `sources` and one `advanced` group.
 |---|---|---|
 | **Connection** | `ssh` (SSH), `local` (This computer), `demo` (Demo device) | `ssh` |
 | **Host** | `[user@]host` or a Host from your SSH config | required for SSH |
-| **Read** | `system` (System log), `file` (A file), `command` (A command), `replay` (A saved file, replayed; this computer only) | `system` |
+| **Read** | `system` (System log), `file` (File), `command` (Command output), `replay` (Saved file, replayed; this computer only) | `system` |
 | **File** | The path to follow, or the saved file to replay | required for a file and a replay |
 | **Command** | The command to run; over SSH it runs in `sh` on the host | required for a command |
 | **Name** | Letters, digits, spaces, `_` and `-` | made from where it reads |
@@ -124,7 +124,7 @@ The config holds a list of `sources` and one `advanced` group.
 `auto` turns values off for the system log, whose kernel and daemon lines would make signals of every `pid=`, and on for files, commands and replays.
 A replay also has Time zone (`time_zone`), described in [Where each row goes](#where-each-row-goes).
 
-**Advanced (all sources)**: Prefix (default `Logs`) and Log level.
+**Advanced (all sources)**: Prefix (default `Logs`) and Extension log level, how much Logs reports about itself.
 
 The system log of **This computer** is read on Linux. On macOS and Windows, read a file or a command.
 
@@ -154,7 +154,7 @@ Every action except List Hosts, Auto-configure, Test Connection, Show Access Key
 |---|---|---|
 | List Hosts | Lists the Hosts in this computer's SSH config, for the **Host** field. | yes |
 | Auto-configure | Keeps the configured sources and adds this computer's system log on Linux, or the demo device when there is nothing else. | yes |
-| Test Connection | Connects to a host, with a source's SSH port, Key file, Host key check and Extra ssh options, and says what it will read, or what to fix. || no |
+| Test Connection | Connects to a host, with a source's SSH port, Key file, Host key check and Extra ssh options, and says what it will read, or what to fix. | no |
 | Show Access Key | Returns this computer's key, made on first use, and the line that adds it to a board, limited to running commands. | no |
 | Convert Log File | Converts a saved log file to a trace (`.trz`), also while the extension is stopped. Takes `input_file`, `output_file`, `overwrite`, `time_zone`, `year` and `start_time`, and returns the trace and the lines read. | no |
 | Run Command | Runs a shell command on a source's host and returns its output and exit code. | no |

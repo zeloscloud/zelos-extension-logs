@@ -135,7 +135,7 @@ def _blank(source: Any) -> bool:
     "key_path",
     title="Key file",
     description="A private key to use instead of your SSH agent, your default keys and the "
-    "access key.",
+    "key from Show Access Key.",
     required=False,
     default="",
     widget="file_path_picker",
@@ -143,7 +143,8 @@ def _blank(source: Any) -> bool:
 @action.select(
     "host_key_policy",
     title="Host key check",
-    description="auto trusts the board's key; strict refuses a key known_hosts does not have.",
+    description="auto trusts any key, so a reflashed board keeps working; strict refuses a key "
+    "known_hosts does not have.",
     choices=["auto", "strict"],
     required=False,
     default="auto",
@@ -151,7 +152,7 @@ def _blank(source: Any) -> bool:
 @action.text(
     "ssh_options",
     title="Extra ssh options",
-    description="Passed to ssh before the options above, such as -J bastion.",
+    description="Added to the ssh command, such as -J bastion for a jump host.",
     required=False,
     default="",
 )

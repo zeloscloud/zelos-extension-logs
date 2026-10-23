@@ -6,13 +6,13 @@
   "properties": {
     "sources": {
       "type": "array", "title": "Sources", "minItems": 1, "default": [],
-      "description": "One entry for each log to record. On Linux, Auto-configure adds this computer's own system log.",
+      "description": "One entry for each log to record. Auto-configure adds this computer's system log on Linux, or the demo device to an empty list.",
       "items": {
         "type": "object", "title": "Source",
         "properties": {
           "connection": { "type": "string", "title": "Connection", "enum": ["ssh", "local", "demo"], "ui:enumNames": ["SSH", "This computer", "Demo device"], "default": "ssh" },
-          "read": { "type": "string", "title": "Read", "enum": ["system", "file", "command", "replay"], "ui:enumNames": ["System log", "A file", "A command", "A saved file, replayed"], "default": "system", "description": "The system log is the journal, or syslog where there is no journal." },
-          "name": { "type": "string", "title": "Name", "description": "How this source appears in the trace. Letters, digits, spaces, _ and -. Empty says where it reads: the host made safe (root@bench.local becomes bench_local), local or demo, then the file's name or the command's program.", "pattern": "^[A-Za-z0-9 _-]*$", "maxLength": 64 }
+          "read": { "type": "string", "title": "Read", "enum": ["system", "file", "command", "replay"], "ui:enumNames": ["System log", "File", "Command output", "Saved file, replayed"], "default": "system", "description": "System log reads the journal, or syslog where there is none, on Linux." },
+          "name": { "type": "string", "title": "Name", "description": "How this source appears in the trace. Empty names it after where it reads, such as bench_local. Letters, digits, spaces, _ and -.","pattern": "^[A-Za-z0-9 _-]*$", "maxLength": 64 }
         },
         "required": ["connection"],
         "dependencies": {
@@ -24,20 +24,20 @@
                   "host": { "type": "string", "title": "Host", "minLength": 1, "description": "[user@]host, or a Host from your SSH config.", "ui:widget": "action-choices", "ui:options": { "action": "Logs/list_hosts" } },
                   "advanced": { "type": "object", "title": "Advanced", "ui:options": { "collapsed": true }, "properties": {
                     "ssh_port": { "type": "integer", "title": "SSH port", "minimum": 1, "maximum": 65535, "description": "Empty uses your SSH config, or 22." },
-                    "key_path": { "type": "string", "title": "Key file", "description": "A private key to use instead of your SSH agent, your default keys and the access key.", "ui:widget": "file-picker" },
-                    "host_key_policy": { "type": "string", "title": "Host key check", "enum": ["auto", "strict"], "ui:enumNames": ["Trust the board's key", "Check known_hosts"], "default": "auto", "description": "A reflashed board gets a new host key. Check known_hosts refuses a key it does not know." },
-                    "ssh_options": { "type": "string", "title": "Extra ssh options", "description": "Passed to ssh before the options above, such as -J bastion." },
-                    "history": { "type": "string", "title": "History", "enum": ["kept", "new"], "ui:enumNames": ["What the agent keeps", "New lines only"], "default": "kept", "description": "On the first start, the journal sends the current boot, as far back as the agent keeps data. Other logs start at new lines." },
-                    "time_source": { "type": "string", "title": "Time", "enum": ["device", "arrival"], "ui:enumNames": ["The device's clock", "When the line arrives"], "default": "device", "description": "The device's clock places journal lines by the board's own monotonic time, so a board whose clock is wrong still lines up." },
-                    "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Off for the system log, on otherwise", "On", "Off"], "default": "auto" } } } },
+                    "key_path": { "type": "string", "title": "Key file", "description": "A private key to use instead of your SSH agent, your default keys and the key from Show Access Key.", "ui:widget": "file-picker" },
+                    "host_key_policy": { "type": "string", "title": "Host key check", "enum": ["auto", "strict"], "ui:enumNames": ["Trust any key", "Check known_hosts"], "default": "auto", "description": "Trust any key keeps working after a board is reflashed. Check known_hosts refuses a key it does not know." },
+                    "ssh_options": { "type": "string", "title": "Extra ssh options", "description": "Added to the ssh command, such as -J bastion for a jump host." },
+                    "history": { "type": "string", "title": "History", "enum": ["kept", "new"], "ui:enumNames": ["Earlier lines too", "New lines only"], "default": "kept", "description": "On the first start, also record what the journal kept from this boot. It goes back as far as Zelos keeps data; other logs start at new lines." },
+                    "time_source": { "type": "string", "title": "Time", "enum": ["device", "arrival"], "ui:enumNames": ["The device's clock", "When the line arrives"], "default": "device", "description": "The device's clock places rows by the uptime stamped on each line, so a wrong date still lines up. Lines with none use their arrival." },
+                    "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Automatic", "On", "Off"], "default": "auto", "description": "Records numbers a line prints, such as rpm=1450, as signals you can plot. Automatic leaves it off for the system log, whose services print many." } } } },
                 "required": ["host"] },
               { "properties": { "connection": { "enum": ["local"] } },
                 "if": { "properties": { "read": { "const": "replay" } }, "required": ["read"] },
                 "else": { "properties": {
                   "advanced": { "type": "object", "title": "Advanced", "ui:options": { "collapsed": true }, "properties": {
-                    "history": { "type": "string", "title": "History", "enum": ["kept", "new"], "ui:enumNames": ["What the agent keeps", "New lines only"], "default": "kept", "description": "On the first start, the journal sends the current boot, as far back as the agent keeps data. Other logs start at new lines." },
-                    "time_source": { "type": "string", "title": "Time", "enum": ["device", "arrival"], "ui:enumNames": ["The device's clock", "When the line arrives"], "default": "device", "description": "The device's clock places journal lines by the journal's own monotonic time." },
-                    "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Off for the system log, on otherwise", "On", "Off"], "default": "auto" } } } } } },
+                    "history": { "type": "string", "title": "History", "enum": ["kept", "new"], "ui:enumNames": ["Earlier lines too", "New lines only"], "default": "kept", "description": "On the first start, also record what the journal kept from this boot. It goes back as far as Zelos keeps data; other logs start at new lines." },
+                    "time_source": { "type": "string", "title": "Time", "enum": ["device", "arrival"], "ui:enumNames": ["The device's clock", "When the line arrives"], "default": "device", "description": "The device's clock places rows by the uptime stamped on each line, so a wrong date still lines up. Lines with none use their arrival." },
+                    "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Automatic", "On", "Off"], "default": "auto", "description": "Records numbers a line prints, such as rpm=1450, as signals you can plot. Automatic leaves it off for the system log, whose services print many." } } } } } },
               { "properties": { "connection": { "enum": ["demo"] }, "read": { "title": "Read", "enum": ["system"] } } }
             ]
           },
@@ -54,10 +54,10 @@
                 "required": ["command"] },
               { "properties": {
                   "read": { "enum": ["replay"] },
-                  "path": { "type": "string", "title": "File", "minLength": 1, "description": "A saved log file on this computer, plain or compressed with gzip, bzip2, xz or zstd. Its lines arrive at the pace they were printed, the first one now.", "ui:widget": "file-picker" },
+                  "path": { "type": "string", "title": "File", "minLength": 1, "description": "A saved log file on this computer, plain or compressed with gzip, bzip2, xz or zstd. Its lines play at the pace they were printed, starting now.", "ui:widget": "file-picker" },
                   "advanced": { "type": "object", "title": "Advanced", "ui:options": { "collapsed": true }, "properties": {
                     "time_zone": { "type": "string", "title": "Time zone", "description": "The time zone of stamps that print none, such as Europe/Berlin. A replay needs it only across a daylight-saving change; empty uses this computer's." },
-                    "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Off for the system log, on otherwise", "On", "Off"], "default": "auto" } } } },
+                    "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Automatic", "On", "Off"], "default": "auto", "description": "Records numbers a line prints, such as rpm=1450, as signals you can plot. Automatic leaves it off for the system log, whose services print many." } } } },
                 "required": ["path"] }
             ]
           }
@@ -68,8 +68,8 @@
     "advanced": {
       "type": "object", "title": "Advanced (all sources)", "ui:options": { "collapsed": true }, "additionalProperties": false, "default": {},
       "properties": {
-        "prefix": { "type": "string", "title": "Prefix", "default": "Logs", "pattern": "^[A-Za-z0-9 _-]*[A-Za-z0-9_-][A-Za-z0-9 _-]*$", "maxLength": 128, "description": "The trace source every log publishes under." },
-        "log_level": { "type": "string", "title": "Log level", "enum": ["DEBUG", "INFO", "WARNING", "ERROR"], "default": "INFO" }
+        "prefix": { "type": "string", "title": "Prefix", "default": "Logs", "pattern": "^[A-Za-z0-9 _-]*[A-Za-z0-9_-][A-Za-z0-9 _-]*$", "maxLength": 128, "description": "Every source shows under it, as in Logs/bench_1." },
+        "log_level": { "type": "string", "title": "Extension log level", "enum": ["DEBUG", "INFO", "WARNING", "ERROR"], "default": "INFO", "description": "How much Logs reports about itself; it never filters the lines it records." }
       }
     }
   },

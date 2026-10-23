@@ -51,10 +51,10 @@ Actions show up under **Logs** in the sidebar's **Actions**. Double-click one to
 | You see | Do this |
 |---|---|
 | `<host> refused the login` | Run **Show Access Key** and paste its line into a shell on the board, or set **Key file**. |
-| `The host key of <host> changed` | A reflashed board gets a new key. Run the `ssh-keygen -R` line the message gives, or set **Host key check** to **Trust the board's key**. |
+| `The host key of <host> changed` | A reflashed board gets a new key. Run the `ssh-keygen -R` line the message gives, or set **Host key check** to **Trust any key**. |
 | `<user> is not root and not in systemd-journal` | The journal shows that user only its own entries. On the board, run `sudo usermod -aG systemd-journal <user>`. |
 | `<host> did not answer` | Check that the board is on and reachable from this computer. Logs keeps trying, up to once a minute. |
-| `No log found` | The board keeps no system log Logs reads. Set **Read** to **A file** or **A command** instead. |
+| `No log found` | The board keeps no system log Logs reads. Set **Read** to **File** or **Command output** instead. |
 
 ## From a script
 

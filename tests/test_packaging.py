@@ -116,6 +116,30 @@ def test_a_branch_keeps_its_fields_labels() -> None:
                     assert field["enum"] == choices[: len(field["enum"])], (key, name)
 
 
+def _advanced(node: object) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Every per-source Advanced setting, in every branch that shows it."""
+    if isinstance(node, dict):
+        advanced = node.get("advanced")
+        if isinstance(advanced, dict) and "properties" in advanced:
+            yield from advanced["properties"].items()
+        for value in node.values():
+            yield from _advanced(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _advanced(value)
+
+
+def test_a_setting_reads_the_same_wherever_it_shows() -> None:
+    """Each branch writes its own copy of a shared setting; the form shows whichever applies."""
+    copies: dict[str, list[dict[str, Any]]] = {}
+    for name, field in _advanced(SCHEMA["properties"]["sources"]["items"]):
+        copies.setdefault(name, []).append(field)
+
+    assert {name for name, fields in copies.items() if len(fields) > 1} >= {"history", "values"}
+    for name, fields in copies.items():
+        assert all(field == fields[0] for field in fields), name
+
+
 def _defaults(node: object, name: str = "") -> Iterator[tuple[str, dict[str, Any]]]:
     """Every field in the schema that has a default, in every branch, with its name."""
     if isinstance(node, dict):

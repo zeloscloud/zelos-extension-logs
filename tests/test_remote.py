@@ -217,7 +217,7 @@ class TestExplain:
 
         assert failure == Failure(
             "The host key of bench-1 is not in known_hosts. Connect once with ssh to add it, or "
-            "set Host key check to Trust the board's key.",
+            "set Host key check to Trust any key.",
             True,
         )
 
@@ -240,8 +240,8 @@ class TestExplain:
         )
 
         assert failure == Failure(
-            f"The host key of {host} changed. Run {remove}, or set Host key check to Trust the "
-            "board's key.",
+            f"The host key of {host} changed. Run {remove}, or set Host key check to Trust any "
+            "key.",
             True,
         )
 
