@@ -12,6 +12,8 @@ from .probe import Probe
 _DRIFT_PPM = 200
 # journald reads an entry's two clocks one after the other.
 _SAME_GAP_NS = 1_000_000
+# How far an entry lands after one it ties with, as a fed line follows the one before.
+_TIE_NS = 1_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,14 +58,30 @@ class Placement:
     late, never early. A boot's wall clock less its monotonic clock changes only when the board
     sleeps or its wall clock steps. When it grows, the monotonic clock fell behind and the boot's
     mapping starts over, seeded again unless the jump came after the probe.
+
+    journald gives the lines it reads together one stamp. An entry its boot's monotonic clock
+    puts at or after the one before lands at least a microsecond after it, so a boot's entries
+    keep the journal's order.
     """
 
     def __init__(self, probe: Probe | None) -> None:
         self._probe = probe
         self._clocks: dict[str, DeviceClock] = {}
         self._gaps: dict[str, int] = {}
+        # The last entry's boot, monotonic clock and time.
+        self._last: tuple[str, int, int] | None = None
 
     def place(self, entry: Entry, host_ns: int) -> int:
+        placed = self._mapped(entry, host_ns)
+        if entry.monotonic_ns is None:
+            return placed
+        last = self._last
+        if last is not None and last[0] == entry.boot_id and entry.monotonic_ns >= last[1]:
+            placed = max(placed, last[2] + _TIE_NS)
+        self._last = (entry.boot_id, entry.monotonic_ns, placed)
+        return placed
+
+    def _mapped(self, entry: Entry, host_ns: int) -> int:
         clock = self._clocks.get(entry.boot_id)
         if clock is None:
             if entry.monotonic_ns is None or not self._live(entry.boot_id):
