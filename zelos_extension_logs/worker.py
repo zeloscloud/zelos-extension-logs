@@ -30,7 +30,7 @@ NOTES = "logs"
 # Reconnect delays: a drop retries soon, a lasting failure (a refused login) once a minute.
 _FIRST_RETRY_S = 1.0
 _LONGEST_RETRY_S = 60.0
-# How often the journal position is saved.
+# How often a source's position is saved.
 _SAVE_S = 5.0
 _SAMPLE_LINES = 200
 # ssh's last lines, read as they come: an undrained pipe would stall a chatty ssh, as with -v.
@@ -40,6 +40,8 @@ _READ_BYTES = 65536
 _POLL_S = 0.25
 # journalctl's words when the user may not read the system journal.
 _NO_PERMISSION = "insufficient permissions"
+# This computer's boot, for the kernel's lines a command run here prints.
+_BOOT_ID = Path("/proc/sys/kernel/random/boot_id")
 
 State = Literal["starting", "connecting", "streaming", "waiting", "ended", "stopped"]
 # How a session ended: try again soon, try again once a minute, or never (a command that finished).
@@ -61,7 +63,8 @@ class Health:
 
 
 class Cursors:
-    """Each source's journal position, in the extension's data directory, which updates keep."""
+    """Each source's position, in the extension's data directory, which updates keep: the
+    journal's cursor, or the kernel's last line a text source read, and when it was saved."""
 
     def __init__(self, path: Path | None) -> None:
         self._path = path
@@ -123,6 +126,15 @@ def _open_shared(path: Path) -> BinaryIO:
     return os.fdopen(msvcrt.open_osfhandle(handle, os.O_RDONLY), "rb")
 
 
+def _oldest_kernel_line() -> str:
+    """This computer's oldest kernel line, as dmesg prints it first; empty when dmesg cannot."""
+    try:
+        done = subprocess.run(["dmesg"], capture_output=True, timeout=5, check=True)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return done.stdout.decode("utf-8", "replace").partition("\n")[0]
+
+
 def _run(argv: list[str] | str, stdin: int, stderr: int) -> subprocess.Popen[bytes]:
     return remote.popen(argv, stdin=stdin, stdout=subprocess.PIPE, stderr=stderr)
 
@@ -152,6 +164,7 @@ class SourceWorker(threading.Thread):
             notes=NOTES,
             device_time=cfg.time_source == "device",
             values=cfg.values,
+            kernel_values=cfg.kernel_values,
             on_line=self._on_line,
         )
         self._cursors = cursors
@@ -165,6 +178,8 @@ class SourceWorker(threading.Thread):
         self._lock = threading.Lock()
         self._cursor_key = f"{cfg.name}\0{cfg.connection}\0{cfg.host or ''}"
         self._run_cursor = ""
+        # The boot of a text source's last start in this run, "" when it has none; None before.
+        self._text_boot: str | None = None
         self._dropped_at: int | None = None
         self._user = "this user"
         self._refused = False
@@ -272,7 +287,9 @@ class SourceWorker(threading.Thread):
                 assert self.cfg.command is not None
                 command, kind = self.cfg.command, "command"
         self.health.reading = kind
-        self._note_gap(kind)
+        if kind != "journal":
+            self._text_start(board)
+        gap = self._note_gap(kind)
         process = self._start(command)
         if isinstance(process, remote.Failure):
             return self._failed(process)
@@ -285,7 +302,7 @@ class SourceWorker(threading.Thread):
         if kind == "journal":
             streamed = self._follow_journal(self._chunks(process), board, resumes_at)
         else:
-            streamed = self._follow_text(self._chunks(process))
+            streamed = self._follow_text(self._chunks(process), gap)
         remote.terminate(process, timeout=0.5)
         self._process = None
         drain.join(1.0)
@@ -314,6 +331,7 @@ class SourceWorker(threading.Thread):
 
     def _follow_local(self, path: Path) -> Outcome:
         self.health.reading = "file"
+        self._text_start(None)
         self._note_gap("file")
         try:
             self._follow_text(self._appended(path))
@@ -487,11 +505,26 @@ class SourceWorker(threading.Thread):
             self._fail(probe.partial(self._user), True)
         self._note("warn", text.strip(), host_ns)
 
-    def _follow_text(self, chunks: Iterator[tuple[bytes, int]]) -> bool:
-        lines = self.health.lines
+    def _follow_text(
+        self, chunks: Iterator[tuple[bytes, int]], gap: tuple[int, int] | None = None
+    ) -> bool:
+        """`gap` holds when a command was last read and when it ran again: its first lines tell
+        whether it prints again what it printed meanwhile, as `dmesg -w` prints the kernel's."""
+        lines, repeated = self.health.lines, self._stream.repeated
+        last_save = 0
         for chunk, host_ns in chunks:
             self._stream.feed(chunk, host_ns)
+            if gap is not None and (self.health.lines > lines or self._stream.repeated > repeated):
+                if self._stream.repeated == repeated:
+                    self._note_missed(*gap)
+                gap = None
+            if host_ns - last_save >= _SAVE_S * 1e9:
+                last_save = host_ns
+                self._save_text()
         self._stream.end()
+        self._save_text()
+        if gap is not None:
+            self._dropped_at = gap[0]
         return self.health.lines > lines
 
     def _on_line(self, line: Line, record: LogRecord) -> None:
@@ -555,20 +588,99 @@ class SourceWorker(threading.Thread):
         except OSError as e:
             logger.warning("%s: cannot save the journal position: %s", self.cfg.name, e)
 
+    def _saved(self) -> dict[str, object] | None:
+        """The source's saved position, unless it is older than the agent keeps data."""
+        saved = self._cursors.get(self._cursor_key)
+        saved_at = saved.get("saved_ns") if saved else None
+        if not isinstance(saved_at, int) or (
+            self._retention is not None
+            and self._now() - saved_at > self._retention.total_seconds() * 1e9
+        ):
+            return None
+        return saved
+
+    def _text_start(self, board: probe.Probe | None) -> None:
+        """Before a text source starts: map the kernel's lines from its uptime, leave out what it
+        printed before, and, on a run's first start, note the time since the last read."""
+        first = self._text_boot is None
+        saved = self._saved() if first and self.cfg.history == "kept" else None
+        if saved is not None and self._dropped_at is None:
+            saved_at = saved["saved_ns"]
+            assert isinstance(saved_at, int)
+            self._dropped_at = saved_at
+        reading = self._kernel(board)
+        if reading is None:
+            self._text_boot = ""
+            return
+        host_ns, device_ns, boot, oldest = reading
+        self._stream.seed(host_ns, device_ns, oldest)
+        position = self._stream.position if boot == self._text_boot else None
+        if first and saved is not None and saved.get("boot_id") == boot:
+            kept = saved.get("position")
+            if isinstance(kept, list) and len(kept) == 2:
+                at, text = kept
+                if isinstance(at, int) and isinstance(text, str):
+                    position = (at, text)
+        if position is not None:
+            self._stream.resume_after(*position)
+        elif first and self.cfg.history == "new":
+            self._stream.resume_after(device_ns)
+        elif first and self._retention is not None:
+            self._stream.resume_after(device_ns - int(self._retention.total_seconds() * 1e9))
+        self._text_boot = boot
+
+    def _kernel(self, board: probe.Probe | None) -> tuple[int, int, str, str] | None:
+        """When, by the host clock, the kernel's uptime was what, its boot, and its buffer's
+        oldest line: the probe's, or this computer's on Linux."""
+        if board is not None:
+            uptime = board.kernel_ns
+            if uptime is None or not board.boot_id:
+                return None
+            return board.host_ns, uptime, board.boot_id, board.kernel_oldest
+        if self.cfg.connection != "local" or sys.platform != "linux":
+            return None
+        try:
+            boot = _BOOT_ID.read_text(encoding="ascii").strip().replace("-", "")
+        except OSError:
+            return None
+        return self._now(), time.monotonic_ns(), boot, _oldest_kernel_line()
+
+    def _save_text(self) -> None:
+        position = self._stream.position
+        try:
+            self._cursors.put(
+                self._cursor_key,
+                {
+                    "boot_id": self._text_boot or "",
+                    "position": list(position) if position else None,
+                    "saved_ns": self._now(),
+                },
+            )
+        except OSError as e:
+            logger.warning("%s: cannot save the position: %s", self.cfg.name, e)
+
     def _note_restart(self, board: probe.Probe) -> None:
         saved = self._cursors.get(self._cursor_key)
         if saved and board.boot_id and saved.get("boot_id") not in ("", None, board.boot_id):
             self._note("warn", "device restarted")
 
-    def _note_gap(self, kind: str) -> None:
+    def _note_gap(self, kind: str) -> tuple[int, int] | None:
+        """Note that a gap lost what printed meanwhile; for a command, return when the gap began
+        and ended, for its first lines to tell. The journal resumes at its cursor."""
         dropped, self._dropped_at = self._dropped_at, None
-        # The journal resumes at its cursor; other logs lose what printed while disconnected.
-        if dropped is not None and kind != "journal":
-            self.health.gaps += 1
-            seconds = (self._now() - dropped) / 1e9
-            self._note(
-                "warn", f"Reconnected after {seconds:.0f} s; lines printed meanwhile are missing."
-            )
+        if dropped is None or kind == "journal":
+            return None
+        if kind == "command":
+            return dropped, self._now()
+        self._note_missed(dropped, self._now())
+        return None
+
+    def _note_missed(self, dropped: int, at: int) -> None:
+        self.health.gaps += 1
+        seconds = (at - dropped) / 1e9
+        self._note(
+            "warn", f"Reconnected after {seconds:.0f} s; lines printed meanwhile are missing.", at
+        )
 
 
 def state_of(worker: SourceWorker) -> dict[str, object]:

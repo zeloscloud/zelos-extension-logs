@@ -54,6 +54,8 @@ def probe_output(
     boot: str = "f07dd35d-996b-4983-98f1-e4347c93e456",
     uptime: str = "500.00",
     clock: int = CLOCK_S,
+    kernel_lag_s: float | None = None,
+    dmesg: str | None = None,
     end: bool = True,
 ) -> str:
     lines = [f"uid={uid}", f"user={user}", f"groups={groups}"]
@@ -76,6 +78,14 @@ def probe_output(
     )
     lines += [f"boot_id={boot}", f"journal={entry}", f"clock={clock}", f"clock_ns={clock * S}"]
     lines.append(f"uptime={uptime}")
+    if kernel_lag_s is not None and monotonic_us is not None:
+        stamped = monotonic_us - round(kernel_lag_s * 1e6)
+        received = {"__MONOTONIC_TIMESTAMP": str(monotonic_us)}
+        lines.append(
+            f"kernel={json.dumps({**received, '_SOURCE_MONOTONIC_TIMESTAMP': str(stamped)})}"
+        )
+    if dmesg is not None:
+        lines.append(f"dmesg={dmesg}")
     if end:
         lines.append("end=1")
     return "\n".join(lines) + "\n"
@@ -2223,3 +2233,228 @@ class TestReplay:
         message = f"Cannot read {missing}: No such file or directory."
         assert rig.worker.health.message == message
         assert rig.notes("dev") == [("error", f"[logs] {message}")]
+
+
+def kernel(uptime_s: float, text: str) -> str:
+    return f"[{uptime_s:12.6f}] {text}\n"
+
+
+class TestSavedPlace:
+    def test_lines_printed_while_the_extension_was_stopped_are_noted_missing(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        rig = make(
+            source(read="file", path="/x"),
+            FakeProcess(probe_output()),
+            FakeProcess("two\n", hold_open=True),
+        )
+        # The run before saved its place 30 s ago.
+        rig.cursors.put(
+            rig.worker._cursor_key,
+            {"boot_id": BOOT, "position": None, "saved_ns": (CLOCK_S - 30) * S},
+        )
+
+        rig.run_until(lambda: rig.worker.health.lines == 1)
+
+        assert rig.notes() == [
+            ("warn", "[logs] Reconnected after 30 s; lines printed meanwhile are missing.")
+        ]
+
+
+class TestKernel:
+    """`dmesg -w` prints the kernel's buffer, then follows it; run again, it prints it again."""
+
+    BUFFER = kernel(100, "Booting Linux") + kernel(499, "eth0: link up")
+    # What `dmesg | head -n 1` printed in the probe: the buffer's oldest line.
+    OLDEST = "[  100.000000] Booting Linux"
+
+    def probe(self, **changes: Any) -> FakeProcess:
+        return FakeProcess(probe_output(**{"dmesg": self.OLDEST, **changes}))
+
+    def dmesg(self, **changes: Any) -> config.SourceConfig:
+        return source(read="command", command="dmesg -w", **changes)
+
+    def test_the_buffer_lands_at_its_own_times_by_the_probes_uptime(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        rig = make(self.dmesg(), self.probe(), FakeProcess(self.BUFFER, hold_open=True))
+
+        rig.run_until(lambda: rig.worker.health.lines == 2)
+
+        # The probe read an uptime of 500 s at the host's CLOCK_S.
+        assert [r[TIME] for r in rig.programs()] == [CLOCK_S - 400.0, CLOCK_S - 1.0]
+
+    def test_the_buffer_is_placed_by_the_kernels_own_clock_where_the_journal_measured_it(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        # The kernel's clock runs 2 s behind the monotonic clock, as NTP never corrects it.
+        rig = make(
+            self.dmesg(),
+            self.probe(kernel_lag_s=2),
+            FakeProcess(
+                kernel(100, "Booting Linux") + kernel(497, "eth0: link up"), hold_open=True
+            ),
+        )
+
+        rig.run_until(lambda: rig.worker.health.lines == 2)
+
+        assert [r[TIME] for r in rig.programs()] == [CLOCK_S - 398.0, CLOCK_S - 1.0]
+
+    def test_a_rerun_after_a_drop_records_only_what_is_new(self, make: Callable[..., Rig]) -> None:
+        rig = make(
+            self.dmesg(),
+            self.probe(),
+            FakeProcess(self.BUFFER, "", 1),
+            self.probe(),
+            FakeProcess(self.BUFFER + kernel(510, "usb 1-1: new device"), hold_open=True),
+        )
+
+        rig.run_until(lambda: rig.worker.health.lines == 3)
+
+        assert [r["message"] for r in rig.programs()] == [
+            "Booting Linux",
+            "eth0: link up",
+            "usb 1-1: new device",
+        ]
+        assert rig.notes() == [("warn", "[logs] root@bench-1: the log ended (exit 1).")]
+
+    def test_the_last_line_read_is_saved(self, make: Callable[..., Rig]) -> None:
+        rig = make(self.dmesg(), self.probe(), FakeProcess(self.BUFFER, hold_open=True))
+
+        rig.run_until(lambda: rig.worker.health.lines == 2)
+
+        assert rig.saved()[rig.worker._cursor_key] == {
+            "boot_id": BOOT,
+            "position": [499 * S, "[  499.000000] eth0: link up"],
+            "saved_ns": CLOCK_S * S,
+        }
+
+    def test_a_restarted_extension_goes_on_from_the_saved_line(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        rig = make(
+            self.dmesg(),
+            self.probe(),
+            FakeProcess(self.BUFFER + kernel(510, "usb 1-1: new device"), hold_open=True),
+        )
+        rig.cursors.put(
+            rig.worker._cursor_key,
+            {
+                "boot_id": BOOT,
+                "position": [499 * S, "[  499.000000] eth0: link up"],
+                "saved_ns": (CLOCK_S - 30) * S,
+            },
+        )
+
+        rig.run_until(lambda: rig.worker.health.lines == 1)
+
+        assert [r["message"] for r in rig.programs()] == ["usb 1-1: new device"]
+        assert rig.notes() == []
+
+    def test_after_a_reboot_the_new_boots_buffer_is_recorded(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        rig = make(
+            self.dmesg(),
+            self.probe(),
+            FakeProcess(self.BUFFER, "", 1),
+            self.probe(
+                boot="0b1a5e1d-0000-4000-8000-000000000001",
+                uptime="30.00",
+                dmesg="[    0.500000] Booting Linux again",
+            ),
+            FakeProcess(kernel(0.5, "Booting Linux again"), hold_open=True),
+        )
+
+        rig.run_until(lambda: rig.worker.health.lines == 3)
+
+        assert [r["message"] for r in rig.programs()][-1] == "Booting Linux again"
+        assert ("warn", "[logs] device restarted") in rig.notes()
+
+    def test_another_boards_console_keeps_every_line_and_is_placed_as_it_arrives(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        """A command relaying a second board's console prints kernel stamps of its own."""
+        relay = kernel(1.1, "acme: tick 1") + kernel(1.2, "acme: tick 2")
+        rig = make(
+            source(read="command", command="cat /dev/ttyUSB0"),
+            self.probe(),
+            FakeProcess(relay, hold_open=True),
+            retention=timedelta(seconds=60),
+        )
+
+        rig.run_until(lambda: rig.worker.health.lines == 2)
+
+        assert [(r["message"], r[TIME]) for r in rig.programs()] == [
+            ("acme: tick 1", float(CLOCK_S)),
+            ("acme: tick 2", CLOCK_S + 0.000001),
+        ]
+        assert rig.saved()[rig.worker._cursor_key]["position"] is None
+
+    def test_new_lines_only_leaves_the_buffer_out(self, make: Callable[..., Rig]) -> None:
+        rig = make(
+            self.dmesg(advanced={"history": "new"}),
+            self.probe(),
+            FakeProcess(self.BUFFER + kernel(501, "after the start"), hold_open=True),
+        )
+
+        rig.run_until(lambda: rig.worker.health.lines == 1)
+
+        assert [r["message"] for r in rig.programs()] == ["after the start"]
+
+    def test_history_goes_back_only_as_far_as_the_agent_keeps_data(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        rig = make(
+            self.dmesg(),
+            self.probe(),
+            FakeProcess(self.BUFFER, hold_open=True),
+            retention=timedelta(seconds=60),
+        )
+
+        rig.run_until(lambda: rig.worker.health.lines == 1)
+
+        assert [r["message"] for r in rig.programs()] == ["eth0: link up"]
+
+    def test_this_computers_kernel_maps_a_local_command(
+        self, make: Callable[..., Rig], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        boot = tmp_path / "boot_id"
+        boot.write_text("f07dd35d-996b-4983-98f1-e4347c93e456\n")
+        monkeypatch.setattr(worker, "_BOOT_ID", boot)
+        monkeypatch.setattr(worker.time, "monotonic_ns", lambda: 500 * S)
+        monkeypatch.setattr(worker, "_oldest_kernel_line", lambda: self.OLDEST)
+        rig = make(command("dmesg -w"), FakeProcess(self.BUFFER, hold_open=True))
+
+        # Linux only while the lines are read: the stop signals the process as this platform does.
+        with monkeypatch.context() as linux:
+            linux.setattr(worker.sys, "platform", "linux")
+            rig.start()
+            wait_until(lambda: rig.worker.health.lines == 2)
+        rig.stop()
+
+        assert [r[TIME] for r in rig.programs("dev")] == [CLOCK_S - 400.0, CLOCK_S - 1.0]
+
+    def test_automatic_values_leave_the_kernels_lines_out(self, make: Callable[..., Rig]) -> None:
+        rig = make(
+            self.dmesg(),
+            self.probe(),
+            FakeProcess(kernel(499, "SLUB: CPUs=4, Nodes=1") + "rpm=5\n", hold_open=True),
+        )
+
+        rig.run_until(lambda: rig.worker.health.lines == 2)
+
+        events = rig.recording.events()
+        assert "bench-1/kernel" not in events
+        assert [r["rpm"] for r in events["bench-1/values"]] == [5]
+
+    def test_values_on_reads_the_kernels_lines_too(self, make: Callable[..., Rig]) -> None:
+        rig = make(
+            self.dmesg(advanced={"values": "on"}),
+            self.probe(),
+            FakeProcess(kernel(499, "SLUB: CPUs=4, Nodes=1"), hold_open=True),
+        )
+
+        rig.run_until(lambda: rig.worker.health.lines == 1)
+
+        assert [r["CPUs"] for r in rig.recording.events()["bench-1/kernel"]] == [4]

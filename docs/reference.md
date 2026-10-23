@@ -38,7 +38,7 @@ A word inside the sentence never sets a level: `High Level Software warning` is 
 
 - **Journal entries** are placed by the board's monotonic clock, mapped onto this computer's clock for each boot. The probe reads the board's uptime, so history sent at connect lands at its own time. A board whose clock reads 1970 until its network sets it still lines up.
 - **An entry from an earlier boot**, which a resume can bring, takes its wall-clock stamp, shifted by how far the board's clock was from this computer's.
-- **Other lines** take the time they arrive, unless they carry a kernel-style uptime such as `[    1.234567]`.
+- **Other lines** take the time they arrive, unless they carry a kernel-style uptime such as `[    1.234567]`. The probe reads the kernel's own clock too, so the buffer `dmesg -w` prints when it starts lands at its own times; lines after that are placed as they arrive. NTP never corrects the kernel's clock, so it drifts a few parts per million from the board's: where the journal measured that drift on a recent kernel line, Logs takes it out, and an older line can still be off by its drift since. The system log places kernel lines exactly.
 
 Set **Time** to **When the line arrives** to place every row by arrival.
 
@@ -47,7 +47,8 @@ Set **Time** to **When the line arrives** to place every row by arrival.
 - **First start**: the journal sends the current boot, as far back as the agent keeps data: its data retention, or an hour before the board's clock when the agent does not say. With **History** set to **New lines only**, it starts at the next entry.
 - **A dropped connection or a reboot of the board**: the journal resumes where it stopped, so nothing the journal still holds is lost.
 - **An agent restart**: the journal resumes at the last position Logs saved, unless **History** is **New lines only**, which starts at the next entry. Logs saves the position every 5 s and when it stops, so an extension that ends without stopping can record up to its last 5 s again. The position is kept in the extension's data directory, which updates keep. A position older than the agent keeps data is not resumed: the source starts with the history again.
-- **logread, files and commands** start at new lines. After a drop, a note says how long the source was away.
+- **The kernel's lines a command prints**, as `dmesg -w` prints its buffer and then follows it: the first start keeps them as far back as the agent keeps data, or with **New lines only** none of them. After a drop, a reboot of the board aside, or an agent restart, the command runs again and Logs leaves out the lines up to the last one it recorded, so none is missed or repeated. Logs saves that line as it saves the journal's position.
+- **logread and files** start at new lines, and other commands print what they print. After a drop, or an agent restart, a note says how long the source was away.
 - **A reboot** writes the note `[logs] device restarted`.
 
 ### Access
@@ -121,7 +122,7 @@ The config holds a list of `sources` and one `advanced` group.
 | **Name** | Letters, digits, spaces, `_` and `-` | made from where it reads |
 
 **Advanced** (each source): SSH port, Key file, Host key check, Extra ssh options, History (`kept` or `new`), Time (`device` or `arrival`), and Printed values as signals (`auto`, `on` or `off`).
-`auto` turns values off for the system log, whose kernel and daemon lines would make signals of every `pid=`, and on for files, commands and replays.
+`auto` turns values off for the system log, whose kernel and daemon lines would make signals of every `pid=`, and on for files, commands and replays, except the kernel's lines, which print settings and addresses. `on` reads them too.
 A replay also has Time zone (`time_zone`), described in [Where each row goes](#where-each-row-goes).
 
 **Advanced (all sources)**: Prefix (default `Logs`) and Extension log level, how much Logs reports about itself.

@@ -1,6 +1,7 @@
 """The probe script's output, and the command each kind of board gets."""
 
 import contextlib
+import json
 import os
 import shlex
 import shutil
@@ -112,6 +113,44 @@ class TestMonotonic:
 
     def test_unknown_without_the_journals_clocks(self) -> None:
         assert make(clock_ns=self.CLOCK_NS, journal_gap_ns=None).monotonic_ns is None
+
+    def test_the_kernels_clock_is_the_monotonic_clock_less_its_lag(self) -> None:
+        board = make(
+            clock_ns=self.CLOCK_NS,
+            journal_gap_ns=self.CLOCK_NS - 500 * S,
+            uptime_ns=500 * S,
+            kernel_lag_ns=420_000_000,
+        )
+
+        assert board.kernel_ns == 500 * S - 420_000_000
+
+    def test_the_kernels_clock_is_the_uptime_without_a_journal(self) -> None:
+        assert make(uptime_ns=500 * S).kernel_ns == 500 * S
+
+    @pytest.mark.parametrize(
+        ("source_us", "lag_ns"),
+        # Imported from the buffer when journald started at boot, received seconds late.
+        [(400_000_000, -2_600_000_000), (3_000_000, None)],
+    )
+    def test_the_kernels_lag_is_read_from_an_entry_the_kernel_printed_live(
+        self, source_us: int, lag_ns: int | None
+    ) -> None:
+        received_us = source_us - 2_600_000 if lag_ns else source_us + 5_000_000
+        kernel = json.dumps(
+            {
+                "__MONOTONIC_TIMESTAMP": str(received_us),
+                "_SOURCE_MONOTONIC_TIMESTAMP": str(source_us),
+            }
+        )
+        board = probe.parse(ROOT_SYSTEMD.replace("end=1", f"kernel={kernel}\nend=1"), 0)
+
+        assert board.kernel_lag_ns == lag_ns
+
+    def test_the_kernels_oldest_line_is_read_as_dmesg_printed_it(self) -> None:
+        line = "[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x414fd0b1]"
+        board = probe.parse(ROOT_SYSTEMD.replace("end=1", f"dmesg={line}\nend=1"), 0)
+
+        assert (board.kernel_oldest, probe.parse(ROOT_SYSTEMD, 0).kernel_oldest) == (line, "")
 
     def test_an_entry_that_is_not_json_has_no_gap(self) -> None:
         board = probe.parse(ROOT_SYSTEMD.replace("journal={", "journal=x{"), 0)

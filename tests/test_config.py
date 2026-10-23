@@ -49,6 +49,7 @@ class TestDefaults:
             history="kept",
             time_source="device",
             values=False,
+            kernel_values=False,
             timing=None,
         )
 
