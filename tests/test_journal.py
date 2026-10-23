@@ -246,12 +246,35 @@ class TestPlacement:
         assert placement.place(entry_at(None), 1005 * S) == 1005 * S
 
     def test_a_burst_with_no_probe_is_placed_by_arrival(self) -> None:
-        """Without a probe nothing says how old the history is, so it arrives as new."""
+        """Without a probe nothing says how old the history is, so it arrives as new, in order."""
         placement = Placement(None)
 
         placed = [placement.place(entry_at(m), 1000 * S) for m in (1, 2, 3)]
 
-        assert placed == [1000 * S] * 3
+        assert placed == [1000 * S, 1000 * S + 1_000, 1000 * S + 2_000]
+
+    def test_entries_journald_stamped_alike_keep_their_order_a_microsecond_apart(self) -> None:
+        placement = Placement(board())
+        stamps = [400 * S, 400 * S, 400 * S, 400 * S + 1_000, 400 * S + 500_000_000]
+
+        placed = [placement.place(Entry("c", BOOT, m, None), 1000 * S) for m in stamps]
+
+        assert placed == [
+            900 * S,
+            900 * S + 1_000,
+            900 * S + 2_000,
+            900 * S + 3_000,
+            900 * S + 500_000_000,
+        ]
+
+    def test_a_tie_in_an_earlier_boot_keeps_its_order_too(self) -> None:
+        placement = Placement(board(clock_s=1000, host_ns=1000 * S))
+
+        placed = [
+            placement.place(entry_at(80, real_s=900, boot=OTHER_BOOT), 1001 * S) for _ in range(2)
+        ]
+
+        assert placed == [900 * S, 900 * S + 1_000]
 
     def test_a_quiet_entry_is_placed_by_the_last_prompt_one(self) -> None:
         placement = Placement(None)
