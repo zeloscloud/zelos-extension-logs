@@ -175,6 +175,7 @@ class TestParse:
             clock_ns=1792606744_512_000_000,
             journal_gap_ns=(1792606744_000_000 - 795_100_000) * 1000,
             host_ns=42,
+            journal_cursor=CURSOR,
         )
         assert not board.partial_journal
 
@@ -407,7 +408,35 @@ class TestSystemLog:
 
         assert log.kind == "journal"
         assert log.resumes_at is None
-        assert log.command.endswith("-b --no-tail --since=@1699996400")
+        assert log.command.endswith("-b --since=@1699996400")
+
+    def test_the_boots_history_is_read_whole_and_not_followed(self) -> None:
+        log = system_log(make(systemd=252, clock_s=1_700_000_000), None, "kept")
+
+        assert log.history
+        assert log.command.startswith("journalctl -q -o json --all --output-fields=")
+        assert "-f" not in shlex.split(log.command)
+
+    @pytest.mark.parametrize("cursor", [None, CURSOR])
+    @pytest.mark.parametrize("history", ["kept", "new"])
+    @pytest.mark.parametrize("retention", [None, timedelta(hours=1)])
+    @pytest.mark.parametrize("systemd", [219, 252])
+    @pytest.mark.parametrize("clock_s", [None, 1_700_000_000])
+    def test_no_journal_command_follows_with_a_match(
+        self,
+        cursor: str | None,
+        history: Literal["kept", "new"],
+        retention: timedelta | None,
+        systemd: int,
+        clock_s: int | None,
+    ) -> None:
+        # Following with a field match, systemd 249 skips an entry another journal file got.
+        words = shlex.split(
+            system_log(make(systemd=systemd, clock_s=clock_s), cursor, history, retention).command
+        )
+
+        assert not ("-f" in words and "-b" in words)
+        assert ("-f" in words) != ("-b" in words)
 
     def test_history_uses_the_boards_clock_not_this_computers(self) -> None:
         board = make(systemd=252, clock_s=1_000_000_000, host_ns=1_700_000_000_000_000_000)
@@ -417,7 +446,7 @@ class TestSystemLog:
     def test_history_of_a_board_whose_clock_reads_1970_does_not_go_negative(self) -> None:
         # systemd 247 takes --since=@0 for no --since, and -f then sends only 10 entries.
         assert system_log(make(systemd=247, clock_s=120), None, "kept").command.endswith(
-            "-b --no-tail --since=@0"
+            "-b --since=@0"
         )
 
     def test_history_goes_back_as_far_as_the_agent_keeps_data(self) -> None:
@@ -425,18 +454,20 @@ class TestSystemLog:
 
         log = system_log(board, None, "kept", timedelta(hours=6))
 
-        assert log.command.endswith("-b --no-tail --since=@1699978400")
+        assert log.command.endswith("-b --since=@1699978400")
 
     def test_an_agent_that_keeps_everything_gets_the_whole_boot(self) -> None:
         log = system_log(make(systemd=252, clock_s=None), None, "kept", None)
 
-        assert log.command.endswith("-b --no-tail")
+        assert log.command.endswith(" -b")
+        assert log.history
 
     def test_new_lines_only(self) -> None:
         log = system_log(make(systemd=252), None, "new")
 
         assert log.command.endswith(" -n 0")
         assert "--since" not in log.command
+        assert not log.history
 
     def test_unknown_board_clock_falls_back_to_new_lines(self) -> None:
         log = system_log(make(systemd=252, clock_s=None), None, "kept")
@@ -464,6 +495,7 @@ class TestSystemLog:
         assert "--after-cursor" not in log.command
         assert "--since" not in log.command
         assert "-n 0" not in log.command
+        assert not log.history
 
     def test_a_cursor_is_quoted_for_the_shell(self) -> None:
         nasty = "s=a;i=1;b=2'; rm -rf / #"

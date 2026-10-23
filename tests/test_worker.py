@@ -57,6 +57,7 @@ def probe_output(
     path: str | None = None,
     kernel_lag_s: float | None = None,
     dmesg: str | None = None,
+    journal_cursor: str | None = None,
     end: bool = True,
 ) -> str:
     lines = [f"uid={uid}", f"user={user}", f"groups={groups}"]
@@ -67,9 +68,11 @@ def probe_output(
     lines += [f"file={name}" for name in files]
     # A board that never slept: its journal's clocks agree with its uptime.
     monotonic_us = round(float(uptime) * 1e6) if uptime.replace(".", "", 1).isdecimal() else None
+    latest = {"__CURSOR": journal_cursor} if journal_cursor else {}
     entry = (
         json.dumps(
             {
+                **latest,
                 "__REALTIME_TIMESTAMP": str(clock * 1_000_000),
                 "__MONOTONIC_TIMESTAMP": str(monotonic_us),
             }
@@ -355,9 +358,9 @@ class TestJournalFlow:
 
         assert rig.processes.command(0) == probe.SCRIPT
         assert rig.processes.command(1) == (
-            "journalctl -f -o json --all --output-fields="
+            "journalctl -q -o json --all --output-fields="
             "MESSAGE,PRIORITY,SYSLOG_IDENTIFIER,_COMM,_SYSTEMD_UNIT,_PID,CODE_FILE,CODE_LINE,"
-            f"_TRANSPORT -b --no-tail --since=@{CLOCK_S - 3600}"
+            f"_TRANSPORT -b --since=@{CLOCK_S - 3600}"
         )
         assert rig.processes.argvs[1][-1] == remote.wrap(rig.processes.command(1))
         assert rig.processes.argvs[1][-3:-1] == ["--", "root@bench-1"]
@@ -426,12 +429,113 @@ class TestJournalFlow:
         assert [r["message"] for r in rig.programs()] == ["a", "b"]
 
     def test_the_stream_ending_is_noted_and_retried(self, make: Callable[..., Rig]) -> None:
-        rig = make(None, probe_process(), journal_session(entry(CURSOR_1, 400, "a")))
+        rig = make(
+            None,
+            probe_process(),
+            journal_session(entry(CURSOR_1, 400, "a")),
+            probe_process(),
+            journal_session(entry(CURSOR_2, 450, "b")),
+        )
 
         rig.run_until("waiting")
 
-        assert ("warn", "[logs] root@bench-1: the log ended (exit 0).") in rig.notes()
+        assert rig.notes() == [("warn", "[logs] root@bench-1: the log ended (exit 0).")]
         assert rig.worker.health.reconnects == 1
+
+
+class TestHistory:
+    def test_a_first_start_reads_the_boot_then_follows_from_its_last_entry(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        follow = FakeProcess(hold_open=True)
+        rig = make(
+            None,
+            probe_process(),
+            journal_session(entry(CURSOR_1, 400, "a"), entry(CURSOR_2, 450, "b")),
+            probe_process(),
+            follow,
+        )
+        rig.start()
+        try:
+            follow.send(entry(CURSOR_2, 450, "b") + entry(CURSOR_3, 499, "c"))
+            wait_until(lambda: rig.worker.health.lines == 3)
+        finally:
+            rig.stop()
+
+        history, followed = shlex.split(rig.processes.command(1)), rig.processes.command(3)
+        assert "-b" in history and "-f" not in history
+        assert shlex.split(followed)[:2] == ["journalctl", "-f"]
+        assert followed.endswith(f"--cursor='{CURSOR_2}'")
+        assert " -b" not in followed
+        assert [r["message"] for r in rig.programs()] == ["a", "b", "c"]
+        # Reading the history and following it are one start: nothing to note or count.
+        assert rig.notes() == []
+        assert rig.worker.health.reconnects == 0
+
+    def test_history_with_no_entry_follows_from_the_boards_latest_entry(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        follow = FakeProcess(hold_open=True)
+        rig = make(
+            None,
+            probe_process(journal_cursor=CURSOR_1),
+            journal_session(),
+            probe_process(journal_cursor=CURSOR_1),
+            follow,
+        )
+        rig.start()
+        try:
+            follow.send(entry(CURSOR_1, 400, "old") + entry(CURSOR_2, 501, "new"))
+            wait_until(lambda: rig.worker.health.lines == 1)
+        finally:
+            rig.stop()
+
+        assert rig.processes.command(3).endswith(f"--cursor='{CURSOR_1}'")
+        assert [r["message"] for r in rig.programs()] == ["new"]
+
+    def test_history_with_no_entry_on_a_board_with_none_follows_new_lines(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        rig = make(None, probe_process(), journal_session(), probe_process(), journal_session())
+
+        rig.run_until(lambda: len(rig.processes.started) == 4)
+
+        assert rig.processes.command(3).endswith(" -n 0")
+
+    def test_history_cut_short_resumes_from_its_last_entry(self, make: Callable[..., Rig]) -> None:
+        rig = make(
+            None,
+            probe_process(),
+            journal_session(entry(CURSOR_1, 400, "a"), rc=255, stderr="Connection reset by peer"),
+            probe_process(),
+            journal_session(entry(CURSOR_1, 400, "a"), entry(CURSOR_2, 450, "b")),
+        )
+
+        rig.run_until(lambda: rig.worker.health.lines == 2)
+
+        assert rig.processes.command(3).endswith(f"--cursor='{CURSOR_1}'")
+        assert [r["message"] for r in rig.programs()] == ["a", "b"]
+        assert rig.worker.health.reconnects >= 1
+
+    def test_a_partial_journal_is_noted_once_for_its_history_and_follow(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        follow = FakeProcess(hold_open=True)
+        rig = make(
+            None,
+            probe_process(uid=1000, user="probe", groups="probe"),
+            journal_session(entry(CURSOR_1, 400, "a")),
+            probe_process(uid=1000, user="probe", groups="probe"),
+            follow,
+        )
+        rig.start()
+        try:
+            follow.send(entry(CURSOR_2, 450, "b"))
+            wait_until(lambda: rig.worker.health.lines == 2)
+        finally:
+            rig.stop()
+
+        assert rig.notes() == [("warn", f"[logs] {PARTIAL}")]
 
 
 KEY = "bench-1\0ssh\0root@bench-1"
@@ -862,9 +966,9 @@ class TestResume:
     ) -> None:
         rig = make(None, probe_process(), journal_session(), retention=timedelta(hours=6))
 
-        rig.run_until("waiting")
+        rig.run_until(lambda: len(rig.processes.started) == 2)
 
-        assert f"-b --no-tail --since=@{CLOCK_S - 6 * 3600}" in rig.processes.command(1)
+        assert rig.processes.command(1).endswith(f" -b --since=@{CLOCK_S - 6 * 3600}")
 
     def test_a_cursor_the_agent_still_keeps_data_for_is_used(
         self, make: Callable[..., Rig]
@@ -1019,7 +1123,7 @@ class TestFailures:
         self, make: Callable[..., Rig]
     ) -> None:
         rig = make(
-            None,
+            source(advanced={"history": "new"}),
             FakeProcess("", "ssh: connect to host bench-1 port 22: Connection refused", 255),
             probe_process(),
             journal_session(entry(CURSOR_1, 400, "a")),
@@ -1369,7 +1473,7 @@ class TestBackoff:
         self, make: Callable[..., Rig]
     ) -> None:
         rig = make(
-            None,
+            source(advanced={"history": "new"}),
             FakeProcess("", "Connection refused", 255),
             FakeProcess("", "Connection refused", 255),
             probe_process(),
@@ -1791,7 +1895,7 @@ class TestText:
     ) -> None:
         monkeypatch.setattr("sys.platform", "linux")
         rig = make(
-            local(read="system"),
+            local(read="system", advanced={"history": "new"}),
             probe_process(),
             journal_session(entry(CURSOR_1, 400, "a")),
         )
@@ -1847,6 +1951,8 @@ class TestStateAndSample:
             None,
             probe_process(),
             journal_session(entry(CURSOR_1, 400, "a"), entry(CURSOR_2, 450, "b")),
+            probe_process(),
+            journal_session(),
         )
 
         rig.run_until("waiting")

@@ -440,13 +440,13 @@ PROBE = (
     [
         (
             FakeAgent(SimpleNamespace(data_retention=timedelta(hours=6))),
-            f"-b --no-tail --since=@{1_700_000_000 - 6 * 3600}",
+            f" -b --since=@{1_700_000_000 - 6 * 3600}",
         ),
-        (FakeAgent(SimpleNamespace(data_retention=None)), "-b --no-tail"),
-        (FakeAgent(None), f"-b --no-tail --since=@{1_700_000_000 - 3600}"),
+        (FakeAgent(SimpleNamespace(data_retention=None)), " -b"),
+        (FakeAgent(None), f" -b --since=@{1_700_000_000 - 3600}"),
         (
             FakeAgent(None, zelos_sdk.AgentError("no agent")),
-            f"-b --no-tail --since=@{1_700_000_000 - 3600}",
+            f" -b --since=@{1_700_000_000 - 3600}",
         ),
     ],
     ids=["six hours", "no limit", "settings unknown", "no answer"],

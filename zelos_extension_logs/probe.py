@@ -73,6 +73,8 @@ class Probe:
     kernel_oldest: str = ""
     # The file a source follows: ok, missing, directory or unreadable; empty when none was asked.
     path: str = ""
+    # The boot's latest journal entry when the probe ran.
+    journal_cursor: str = ""
 
     @property
     def monotonic_ns(self) -> int | None:
@@ -152,6 +154,7 @@ def parse(output: str, host_ns: int) -> Probe:
         clock_s=int(values["clock"]) if values.get("clock", "").isdecimal() else None,
         clock_ns=int(clock_ns) if clock_ns.isdecimal() else None,
         journal_gap_ns=_gap_ns(values.get("journal", "")),
+        journal_cursor=_cursor(values.get("journal", "")),
         kernel_lag_ns=_lag_ns(values.get("kernel", "")),
         kernel_oldest=values.get("dmesg", ""),
         host_ns=host_ns,
@@ -167,6 +170,14 @@ def _gap_ns(entry: str) -> int | None:
     except (ValueError, TypeError, KeyError):
         return None
     return (realtime - monotonic) * 1000
+
+
+def _cursor(entry: str) -> str:
+    try:
+        cursor = json.loads(entry)["__CURSOR"]
+    except (ValueError, TypeError, KeyError):
+        return ""
+    return cursor if isinstance(cursor, str) else ""
 
 
 def _lag_ns(entry: str) -> int | None:
@@ -197,6 +208,9 @@ class SystemLog:
     command: str
     # The cursor the journal resumes at: its first entry is that one again, already recorded.
     resumes_at: str | None = None
+    # The command prints the boot's history and ends; the journal is then followed from its last
+    # entry.
+    history: bool = False
 
 
 class NoLog(Exception):
@@ -211,24 +225,26 @@ def system_log(
 ) -> SystemLog:
     """The journal where there is one, else BusyBox's logread, else a syslog file.
 
-    With `history` kept, a journal without a cursor starts at the current boot, or later where
-    `retention`, how long the agent keeps data, is shorter; None is no limit.
+    With `history` kept, a journal without a cursor prints the current boot, or less where
+    `retention`, how long the agent keeps data, is shorter; None is no limit. The boot is read
+    whole and not followed: following with a field match such as -b, systemd 249 can skip an entry
+    another journal file got meanwhile. A cursor follows with no match.
     """
     if probe.systemd is not None:
-        command = "journalctl -f -o json --all"
-        if probe.systemd >= 236:
-            command += f" --output-fields={_FIELDS}"
+        fields = f" --output-fields={_FIELDS}" if probe.systemd >= 236 else ""
+        follow = f"journalctl -f -o json --all{fields}"
         if cursor:
             # systemd 245 to 252 skip one more entry --after-cursor when the cursor is vacuumed.
-            return SystemLog("journal", f"{command} --cursor={shlex.quote(cursor)}", cursor)
-        # --no-tail: -f sends only the last 10 entries, even with --since=@0 on systemd 247.
+            return SystemLog("journal", f"{follow} --cursor={shlex.quote(cursor)}", cursor)
+        # -q: an empty boot prints no "-- No entries --".
+        boot = f"journalctl -q -o json --all{fields} -b"
         if history == "kept" and retention is None:
-            return SystemLog("journal", f"{command} -b --no-tail")
+            return SystemLog("journal", boot, history=True)
         if history == "kept" and retention is not None and probe.clock_s is not None:
             # The board's own clock: --since compares with the journal's wall-clock stamps.
             since = max(0, probe.clock_s - int(retention.total_seconds()))
-            return SystemLog("journal", f"{command} -b --no-tail --since=@{since}")
-        return SystemLog("journal", f"{command} -n 0")
+            return SystemLog("journal", f"{boot} --since=@{since}", history=True)
+        return SystemLog("journal", f"{follow} -n 0")
     if probe.logread:
         return SystemLog("logread", "logread -f")
     if probe.files:
