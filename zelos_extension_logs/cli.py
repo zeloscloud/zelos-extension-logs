@@ -36,12 +36,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         app.run()
         return 0
-    timing = Timing(args.zone, args.year, args.start)
     name = safe_name(args.name) if args.name else None
     if args.command == "replay":
-        return _replay(args.file, name, timing)
+        return _replay(args.file, name, Timing(args.zone))
     if args.output is not None and len(args.files) > 1:
         convert.error(f"-o names one trace, but {len(args.files)} files were given")
+    timing = Timing(args.zone, args.year, args.start)
     return _convert(args.files, args.output, name, timing, args.force)
 
 
@@ -94,12 +94,14 @@ def _parsers() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser]:
         help="the IANA time zone of stamps that print none, such as Europe/Berlin "
         "(default: this computer's)",
     )
-    common.add_argument(
+    # A replay starts now, so a start is moot; the year comes from the file's last change.
+    dated = argparse.ArgumentParser(add_help=False)
+    dated.add_argument(
         "--year",
         type=_year,
         help="the year of the last stamp that prints none (default: the file's last change)",
     )
-    common.add_argument(
+    dated.add_argument(
         "--start",
         type=_option(config.start_ns),
         metavar="TIME",
@@ -109,7 +111,7 @@ def _parsers() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser]:
     commands = parser.add_subparsers(dest="command")
     convert = commands.add_parser(
         "convert",
-        parents=[common],
+        parents=[common, dated],
         help="convert saved log files to Zelos traces",
         description="Write each saved log file to a Zelos trace (.trz) beside it, each row at the "
         "time its line printed. Needs no agent.",

@@ -103,9 +103,9 @@ A replay source does the same while the extension runs: on **This computer**, se
 
 A gzip file's last change is the one gzip recorded, so a rotated log keeps its own.
 
-Give the zone, the year and the start with `--zone`, `--year` and `--start` on the command line, or with **Time zone**, **Year** and **Start time** in the action and in a replay source's **Advanced**.
+Give the zone, the year and the start to `convert` with `--zone`, `--year` and `--start`, or to the action with **Time zone**, **Year** and **Start time**.
 The year is the year of the last stamp that prints none. The start is an ISO 8601 time with its offset, such as `2026-10-21T14:03:01+02:00`.
-A replay keeps the gaps between rows and moves them all so the first is now.
+A replay keeps the gaps between rows and moves them all so the first is now, so it takes no start, and it takes the year from the file's last change. `replay` takes `--zone`, and a replay source's **Advanced** has **Time zone**.
 
 ## Configuration
 
@@ -122,7 +122,7 @@ The config holds a list of `sources` and one `advanced` group.
 
 **Advanced** (each source): SSH port, Key file, Host key check, Extra ssh options, History (`kept` or `new`), Time (`device` or `arrival`), and Printed values as signals (`auto`, `on` or `off`).
 `auto` turns values off for the system log, whose kernel and daemon lines would make signals of every `pid=`, and on for files, commands and replays.
-A replay also has Time zone (`time_zone`), Year (`year`) and Start time (`start_time`), described in [Where each row goes](#where-each-row-goes).
+A replay also has Time zone (`time_zone`), described in [Where each row goes](#where-each-row-goes).
 
 **Advanced (all sources)**: Prefix (default `Logs`) and Log level.
 

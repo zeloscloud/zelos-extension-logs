@@ -56,9 +56,7 @@
                   "read": { "enum": ["replay"] },
                   "path": { "type": "string", "title": "File", "minLength": 1, "description": "A saved log file on this computer, plain or compressed with gzip, bzip2, xz or zstd. Its lines arrive at the pace they were printed, the first one now.", "ui:widget": "file-picker" },
                   "advanced": { "type": "object", "title": "Advanced", "ui:options": { "collapsed": true }, "properties": {
-                    "time_zone": { "type": "string", "title": "Time zone", "description": "The time zone of stamps that print none, such as Europe/Berlin. Empty uses this computer's." },
-                    "year": { "type": "integer", "title": "Year", "minimum": 1970, "maximum": 2261, "description": "The year of the last stamp that prints none. Empty takes it from the file's last change." },
-                    "start_time": { "type": "string", "title": "Start time", "description": "When the first line printed, for a file that prints only uptime, such as 2026-10-21T14:03:01+02:00. Empty ends the file at its last change." },
+                    "time_zone": { "type": "string", "title": "Time zone", "description": "The time zone of stamps that print none, such as Europe/Berlin. A replay needs it only across a daylight-saving change; empty uses this computer's." },
                     "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Off for the system log, on otherwise", "On", "Off"], "default": "auto" } } } },
                 "required": ["path"] }
             ]

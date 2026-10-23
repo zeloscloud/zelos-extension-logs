@@ -16,5 +16,5 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Resume the journal where it stopped after a dropped connection, a reboot or an agent restart.
 - Convert a saved log file, plain or compressed with gzip, bzip2, xz or zstd, to a Zelos trace (`.trz`), each row at the time its line printed: `convert` on the command line, or the Convert Log File action, also while the extension is stopped.
 - Replay a saved log file into the agent at the pace its lines were printed: `replay` on the command line, or a source that reads a saved file, replayed.
-- Give a saved file the time zone, the year and the start time its stamps leave out: `--zone`, `--year` and `--start`, or Time zone, Year and Start time.
+- Give a saved file the time zone, the year and the start time its stamps leave out when you convert it, and the time zone when you replay it.
 - List Hosts, Auto-configure, Test Connection, Show Access Key, Convert Log File, Run Command, Get State and Sample actions.

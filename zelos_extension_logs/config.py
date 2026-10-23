@@ -38,7 +38,7 @@ _REPLAY_ADVANCED: dict[str, Any] = next(
     if branch["properties"]["read"]["enum"] == ["replay"]
 )
 #: The years a saved file's timing may name: from the epoch to the last a trace's times hold.
-YEARS = range(_REPLAY_ADVANCED["year"]["minimum"], _REPLAY_ADVANCED["year"]["maximum"] + 1)
+YEARS = range(1970, 2262)
 _SETTINGS: dict[str, Any] = _SCHEMA["properties"]["advanced"]["properties"]
 # What a missing or blank field asks for.
 _ENTER = {
@@ -166,13 +166,8 @@ def source(item: dict[str, Any]) -> SourceConfig:
         time_source=advanced["time_source"],
         # The demo prints values to show them; it has no Advanced settings.
         values=connection == "demo" or (read != "system" if values == "auto" else values == "on"),
-        timing=Timing(
-            zone(advanced.get("time_zone")),
-            advanced.get("year"),
-            start_ns(advanced.get("start_time")),
-        )
-        if read == "replay"
-        else None,
+        # A replay starts now, so a start is moot; the year comes from the file's last change.
+        timing=Timing(zone(advanced.get("time_zone"))) if read == "replay" else None,
     )
 
 
@@ -308,15 +303,13 @@ def _meaning(index: int, item: dict[str, Any]) -> Iterator[tuple[tuple[Any, ...]
         if not item[field].strip():
             yield ("sources", index, field), f"{where}, {title}: {_enter(field, read)}."
     if read == "replay":
-        given = item.get("advanced", {})
-        for key, check in (("time_zone", zone), ("start_time", start_ns)):
-            try:
-                check(given.get(key))
-            except ValueError as e:
-                yield (
-                    ("sources", index, "advanced", key),
-                    f"{where}, {_REPLAY_ADVANCED[key]['title']}: {e}.",
-                )
+        try:
+            zone(item.get("advanced", {}).get("time_zone"))
+        except ValueError as e:
+            yield (
+                ("sources", index, "advanced", "time_zone"),
+                f"{where}, {_REPLAY_ADVANCED['time_zone']['title']}: {e}.",
+            )
 
 
 def _enter(field: str, read: object) -> str:
