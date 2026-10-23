@@ -38,7 +38,7 @@
                     "history": { "type": "string", "title": "History", "enum": ["kept", "new"], "ui:enumNames": ["What the agent keeps", "New lines only"], "default": "kept", "description": "On the first start, the journal sends the current boot, as far back as the agent keeps data. Other logs start at new lines." },
                     "time_source": { "type": "string", "title": "Time", "enum": ["device", "arrival"], "ui:enumNames": ["The device's clock", "When the line arrives"], "default": "device", "description": "The device's clock places journal lines by the journal's own monotonic time." },
                     "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Off for the system log, on otherwise", "On", "Off"], "default": "auto" } } } } } },
-              { "properties": { "connection": { "enum": ["demo"] }, "read": { "title": "Read", "enum": ["system"], "ui:enumNames": ["System log"] } } }
+              { "properties": { "connection": { "enum": ["demo"] }, "read": { "title": "Read", "enum": ["system"] } } }
             ]
           },
           "read": {
