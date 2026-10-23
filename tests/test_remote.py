@@ -396,6 +396,11 @@ def test_the_wrapper_holds_the_command_it_was_given() -> None:
     assert unwrap("dmesg -w") == "dmesg -w"
 
 
+def test_the_wrapper_is_one_line_for_a_one_line_command() -> None:
+    """An SSH server that logs the command, as Tailscale's does, then logs one entry."""
+    assert "\n" not in remote.wrap("journalctl -f -o json --all")
+
+
 @POSIX
 @pytest.mark.parametrize("shell", SHELLS, ids=SHELL_IDS)
 class TestWrap:
@@ -509,6 +514,14 @@ class TestWrap:
         try:
             # Every statement's errors, not only the last one's, come with the output.
             assert read_until_eof(proc) == b"a\nb\nC D\n"
+        finally:
+            kill_group(proc)
+
+    def test_a_command_may_end_in_a_comment(self, shell: str, tmp_path: Path) -> None:
+        proc = spawn(shell, "echo one # the first", tmp_path)
+        try:
+            assert read_until_eof(proc) == b"one\n"
+            assert proc.wait(timeout=2) == 0
         finally:
             kill_group(proc)
 

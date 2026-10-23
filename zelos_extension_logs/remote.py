@@ -46,8 +46,12 @@ def openssh(tool: str) -> str | None:
 
 
 def merged(command: str) -> str:
-    """`command` for sh, with every statement's errors in its output; its `exit` ends only it."""
-    return f"( {command}\n) 2>&1"
+    """`command` for sh, with every statement's errors in its output; its `exit` ends only it.
+
+    `eval` ends a trailing comment with the command, so the wrapper stays on one line: SSH servers
+    that log the command, as Tailscale's does, log one entry.
+    """
+    return f"( eval {shlex.quote(command)} ) 2>&1"
 
 
 def wrap(command: str) -> str:
