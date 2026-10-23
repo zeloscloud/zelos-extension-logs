@@ -154,6 +154,7 @@ class TestEnsure:
 
 
 KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPump0123456789 zelos-logs@bench-1"
+LIMITS = "no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty"
 
 
 class TestInstallLine:
@@ -162,7 +163,7 @@ class TestInstallLine:
 
         assert line == (
             "mkdir -p ~/.ssh && chmod 700 ~/.ssh && "
-            f"echo '{KEY}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+            f"echo '{LIMITS} {KEY}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
         )
 
     @posix
@@ -177,7 +178,7 @@ class TestInstallLine:
             subprocess.run(["/bin/sh", "-c", keys.install_line(KEY)], env=env, check=True)
 
         authorized = board_home / ".ssh" / "authorized_keys"
-        assert authorized.read_text(encoding="utf-8").splitlines() == [KEY, KEY]
+        assert authorized.read_text(encoding="utf-8").splitlines() == [f"{LIMITS} {KEY}"] * 2
         assert (board_home / ".ssh").stat().st_mode & 0o777 == 0o700
         assert authorized.stat().st_mode & 0o777 == 0o600
 
@@ -192,7 +193,7 @@ class TestInstallLine:
 
         assert not (board_home / "pwned").exists()
         authorized = board_home / ".ssh" / "authorized_keys"
-        assert authorized.read_text(encoding="utf-8") == hostile + "\n"
+        assert authorized.read_text(encoding="utf-8") == f"{LIMITS} {hostile}\n"
 
 
 class TestPublic:

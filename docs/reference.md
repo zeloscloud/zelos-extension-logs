@@ -155,7 +155,7 @@ Every action except List Hosts, Auto-configure, Test Connection, Show Access Key
 | List Hosts | Lists the Hosts in this computer's SSH config, for the **Host** field. | yes |
 | Auto-configure | Keeps the configured sources and adds this computer's system log on Linux, or the demo device when there is nothing else. | yes |
 | Test Connection | Connects to a host, with a source's SSH port, Key file, Host key check and Extra ssh options, and says what it will read, or what to fix. || no |
-| Show Access Key | Returns this computer's key, made on first use, and the line that adds it to a board. | no |
+| Show Access Key | Returns this computer's key, made on first use, and the line that adds it to a board, limited to running commands. | no |
 | Convert Log File | Converts a saved log file to a trace (`.trz`), also while the extension is stopped. Takes `input_file`, `output_file`, `overwrite`, `time_zone`, `year` and `start_time`, and returns the trace and the lines read. | no |
 | Run Command | Runs a shell command on a source's host and returns its output and exit code. | no |
 | Get State | Returns a source's state, what it reads, its counters, its last message and the signals its values became. | yes |
