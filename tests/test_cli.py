@@ -192,6 +192,7 @@ class TestConvert:
                 "'2026-10-21 14:03' is not an ISO 8601 time with an offset, such as "
                 "2026-10-21T14:03:01+02:00",
             ),
+            ("--start", "3026-10-21T14:03:01Z", "'3026-10-21T14:03:01Z' is not from 1970 to 2261"),
         ],
     )
     def test_a_timing_option_it_cannot_read(
@@ -268,6 +269,34 @@ class TestReplay:
         assert [row["message"] for row in rows] == ["pump: started", "pump: running rpm=1450"]
         assert all(started - 1 < row[TIME] < time.time() + 1 for row in rows)
         assert [row["rpm"] for row in events["bench-1/pump"]] == [1450]
+
+    def test_the_zone_reaches_the_replay(
+        self, tmp_path: Path, trace_file: Recording, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        Agent(monkeypatch, trace_file)
+        timings: list[object] = []
+
+        def replay(*args: Any, timing: object, **kwargs: Any) -> int:
+            timings.append(timing)
+            return 0
+
+        monkeypatch.setattr(files, "replay", replay)
+
+        assert cli.main(["replay", str(saved(tmp_path)), "--zone", "Europe/Berlin"]) == 0
+
+        assert timings == [Timing(ZoneInfo("Europe/Berlin"))]
+
+    @pytest.mark.parametrize(
+        ("option", "value"), [("--year", "2025"), ("--start", "2026-10-21T14:03:01+02:00")]
+    )
+    def test_a_replay_takes_no_year_or_start(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], option: str, value: str
+    ) -> None:
+        with pytest.raises(SystemExit) as exited:
+            cli.main(["replay", str(saved(tmp_path)), option, value])
+
+        assert exited.value.code == 2
+        assert f"unrecognized arguments: {option}" in capsys.readouterr().err
 
     def test_a_missing_file(
         self,

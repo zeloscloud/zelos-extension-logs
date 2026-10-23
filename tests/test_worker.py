@@ -2168,7 +2168,7 @@ class TestReplay:
         cfg = local(
             read="replay",
             path=str(saved(tmp_path, self.TEXT)),
-            advanced={"time_zone": "UTC", "year": 2025, "start_time": "2026-10-21T14:03:01Z"},
+            advanced={"time_zone": "UTC"},
         )
         rig = make(cfg)
 
@@ -2176,7 +2176,7 @@ class TestReplay:
         rig.worker.join(5)
 
         assert seen == [cfg.timing]
-        assert cfg.timing is not None and cfg.timing.year == 2025
+        assert cfg.timing is not None and str(cfg.timing.zone) == "UTC"
 
     def test_stopping_ends_it_at_once(self, make: Callable[..., Rig], tmp_path: Path) -> None:
         # The second line printed an hour after the first.

@@ -425,22 +425,21 @@ class TestReplay:
         (cfg,) = parse_sources(
             {
                 **self.LOCAL,
-                "advanced": {
-                    "time_zone": " Europe/Berlin ",
-                    "year": 2025,
-                    "start_time": "2026-10-21T14:03:01+02:00",
-                    "values": "off",
-                },
+                "advanced": {"time_zone": " Europe/Berlin ", "values": "off"},
             }
         ).sources
 
-        assert cfg.timing == Timing(ZoneInfo("Europe/Berlin"), 2025, 1_792_584_181_000_000_000)
+        assert cfg.timing == Timing(ZoneInfo("Europe/Berlin"))
         assert cfg.values is False
 
     def test_blank_timing_is_left_to_the_file(self) -> None:
-        (cfg,) = parse_sources(
-            {**self.LOCAL, "advanced": {"time_zone": "", "start_time": "  "}}
-        ).sources
+        (cfg,) = parse_sources({**self.LOCAL, "advanced": {"time_zone": "  "}}).sources
+
+        assert cfg.timing == Timing()
+
+    def test_a_replay_has_no_year_or_start(self) -> None:
+        advanced = {"year": 2025, "start_time": "2026-10-21T14:03:01+02:00"}
+        (cfg,) = parse_sources({**self.LOCAL, "advanced": advanced}).sources
 
         assert cfg.timing == Timing()
 
@@ -485,28 +484,10 @@ class TestReplay:
             "Source 1, Read: choose one of system, file, command."
         ]
 
-    @pytest.mark.parametrize(
-        ("advanced", "problem"),
-        [
-            (
-                {"time_zone": "Mars/Base"},
-                "Source 1, Time zone: 'Mars/Base' is not an IANA time zone, such as Europe/Berlin.",
-            ),
-            (
-                {"start_time": "2026-10-21 14:03"},
-                "Source 1, Start time: '2026-10-21 14:03' is not an ISO 8601 time with an "
-                "offset, such as 2026-10-21T14:03:01+02:00.",
-            ),
-            (
-                {"start_time": "3026-10-21T14:03:01Z"},
-                "Source 1, Start time: '3026-10-21T14:03:01Z' is not from 1970 to 2261.",
-            ),
-            ({"year": 26}, "Source 1, Year: must be from 1970 to 2261."),
-            ({"year": "2025"}, "Source 1, Year: must be a whole number."),
-        ],
-    )
-    def test_timing_it_cannot_read(self, advanced: dict[str, Any], problem: str) -> None:
-        assert problems({**self.LOCAL, "advanced": advanced}) == [problem]
+    def test_a_time_zone_it_cannot_read(self) -> None:
+        assert problems({**self.LOCAL, "advanced": {"time_zone": "Mars/Base"}}) == [
+            "Source 1, Time zone: 'Mars/Base' is not an IANA time zone, such as Europe/Berlin."
+        ]
 
 
 class TestLoad:
