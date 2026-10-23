@@ -160,17 +160,34 @@ class TestPlacement:
 
         assert placed == [600 * S, 800 * S, int(999.9 * S)]
 
+    def test_a_history_that_takes_minutes_to_arrive_keeps_its_times(self) -> None:
+        placement = Placement(board())
+
+        # A boot's journal, a second apart, that takes 8 minutes to arrive.
+        placed = [placement.place(entry_at(m), 1000 * S + m * S) for m in range(500)]
+
+        assert placed == [500 * S + m * S for m in range(500)]
+
+    def test_an_entry_written_after_the_probe_and_sent_behind_history_is_placed_by_the_probe(
+        self,
+    ) -> None:
+        placement = Placement(board())
+        placement.place(entry_at(499), 1120 * S)
+
+        # Written 2 s after the probe answered, read 2 minutes late; 200 ppm of 2 s is 400 µs.
+        assert placement.place(entry_at(502), 1122 * S) == 1002 * S + 400_000
+
     def test_a_later_live_entry_refines_the_mapping(self) -> None:
         placement = Placement(board())
         placement.place(entry_at(400), 1000 * S)
 
-        # Arriving 0.5 s after the seed predicts: the seed's offset still holds.
+        # Arriving 0.5 s after the probe predicts: the probe's offset holds, 200 ppm of 5 s wider.
         late = placement.place(entry_at(505), 1005 * S + 500_000_000)
         # Arriving 0.2 s before it: the journal's clock was ahead, so the offset moves.
         early = placement.place(entry_at(508), 1007 * S + 800_000_000)
         after = placement.place(entry_at(509), 1009 * S)
 
-        assert late == 1005 * S
+        assert late == 1005 * S + 1_000_000
         assert early == 1007 * S + 800_000_000
         # 1.2 s on, the earlier offset allows for 200 ppm of drift: 240 µs.
         assert after == 1008 * S + 800_240_000
