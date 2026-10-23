@@ -263,7 +263,7 @@ class TestExplain:
 
         assert failure.lasting is True
         assert failure.message == (
-            "bench-1 refused the login. Run Show Access Key and add its line to the board, or "
+            "bench-1 refused the login. Run Show Access Key and add its line to the device, or "
             "set Key file."
         )
 

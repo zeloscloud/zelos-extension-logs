@@ -1,7 +1,7 @@
 {
   "type": "object",
   "title": "Logs",
-  "description": "Record the system log of a board over SSH or of this computer, any log file, or the output of any command.",
+  "description": "Record logs in Zelos, on the same timeline as your data: a device's or this computer's system log, any log file, or any command's output.",
   "ui:options": { "autoconfig": "Logs/auto_config" },
   "properties": {
     "sources": {
@@ -10,9 +10,9 @@
       "items": {
         "type": "object", "title": "Source",
         "properties": {
-          "connection": { "type": "string", "title": "Connection", "enum": ["ssh", "local", "demo"], "ui:enumNames": ["SSH", "This computer", "Demo device"], "default": "ssh" },
-          "read": { "type": "string", "title": "Read", "enum": ["system", "file", "command"], "ui:enumNames": ["System log", "File", "Command"], "default": "system", "description": "System log reads the journal or syslog on Linux, the unified log on macOS, and the event log on Windows." },
-          "name": { "type": "string", "title": "Name", "description": "How this source appears in the trace. Empty names it after where it reads, such as bench_local. Letters, digits, spaces, _ and -.","pattern": "^[A-Za-z0-9 _-]*$", "maxLength": 64 }
+          "connection": { "type": "string", "title": "Read from", "enum": ["ssh", "local", "demo"], "ui:enumNames": ["A device over SSH", "This computer", "Demo device"], "default": "ssh" },
+          "read": { "type": "string", "title": "Log", "enum": ["system", "file", "command"], "ui:enumNames": ["System log", "A file", "A command's output"], "default": "system", "description": "The system log is where the operating system and its services log. It is the journal or syslog on Linux, the unified log on macOS, and the event log on Windows." },
+          "name": { "type": "string", "title": "Name", "description": "Shown in the signal tree. Empty names it after the device, and the file or command it reads. Letters, digits, spaces, _ and -.","pattern": "^[A-Za-z0-9 _-]*$", "maxLength": 64 }
         },
         "required": ["connection"],
         "dependencies": {
@@ -20,22 +20,22 @@
             "oneOf": [
               { "properties": {
                   "connection": { "enum": ["ssh"] },
-                  "read": { "title": "Read", "enum": ["system", "file", "command"] },
-                  "host": { "type": "string", "title": "Host", "minLength": 1, "description": "[user@]host, or a Host from your SSH config.", "ui:widget": "action-choices", "ui:options": { "action": "Logs/list_hosts" } },
+                  "read": { "title": "Log", "enum": ["system", "file", "command"] },
+                  "host": { "type": "string", "title": "Address", "minLength": 1, "description": "The device's address, as you'd type after ssh, such as me@my-board. Pick one from your SSH config, or type it.", "ui:widget": "action-choices", "ui:options": { "action": "Logs/list_hosts" } },
                   "advanced": { "type": "object", "title": "Advanced", "ui:options": { "collapsed": true }, "properties": {
                     "ssh_port": { "type": "integer", "title": "SSH port", "minimum": 1, "maximum": 65535, "description": "Empty uses your SSH config, or 22." },
                     "key_path": { "type": "string", "title": "Key file", "description": "A private key to use instead of your SSH agent, your default keys and the key from Show Access Key.", "ui:widget": "file-picker" },
-                    "host_key_policy": { "type": "string", "title": "Host key check", "enum": ["auto", "strict"], "ui:enumNames": ["Trust any key", "Check known_hosts"], "default": "auto", "description": "Trust any key keeps working after a board is reflashed. Check known_hosts refuses a key it does not know." },
+                    "host_key_policy": { "type": "string", "title": "Host key check", "enum": ["auto", "strict"], "ui:enumNames": ["Trust any key", "Check known_hosts"], "default": "auto", "description": "Trust any key keeps working after a device is reflashed. Check known_hosts refuses a key it does not know." },
                     "ssh_options": { "type": "string", "title": "Extra ssh options", "description": "Added to the ssh command, such as -J bastion for a jump host." },
-                    "history": { "type": "string", "title": "History", "enum": ["kept", "new"], "ui:enumNames": ["Earlier lines too", "New lines only"], "default": "kept", "description": "On the first start, also record what was logged earlier this boot. That covers the journal and the kernel's lines dmesg prints, as far back as Zelos keeps data; a file starts at its new lines." },
-                    "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Automatic", "On", "Off"], "default": "auto", "description": "Records numbers a line prints, such as rpm=1450, as signals you can plot. Automatic leaves it off for the system log and the kernel's lines, which print settings, not measurements." } } } },
+                    "history": { "type": "string", "title": "Earlier lines", "enum": ["kept", "new"], "ui:enumNames": ["Include", "New lines only"], "default": "kept", "description": "Also records what was logged before you started, where the log keeps it. That is the journal and the kernel's lines dmesg prints, as far back as Zelos keeps data; files, logread, and the system log of a Mac or a PC start at new lines." },
+                    "values": { "type": "string", "title": "Numbers as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Automatic", "On", "Off"], "default": "auto", "description": "Turns numbers a line prints, such as rpm=1450, into signals you can plot. Automatic leaves out system logs and the kernel's lines, which print settings, not measurements." } } } },
                 "required": ["host"] },
               { "properties": {
                   "connection": { "enum": ["local"] },
                   "advanced": { "type": "object", "title": "Advanced", "ui:options": { "collapsed": true }, "properties": {
-                    "history": { "type": "string", "title": "History", "enum": ["kept", "new"], "ui:enumNames": ["Earlier lines too", "New lines only"], "default": "kept", "description": "On the first start, also record what was logged earlier this boot. That covers the journal and the kernel's lines dmesg prints, as far back as Zelos keeps data; a file starts at its new lines." },
-                    "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Automatic", "On", "Off"], "default": "auto", "description": "Records numbers a line prints, such as rpm=1450, as signals you can plot. Automatic leaves it off for the system log and the kernel's lines, which print settings, not measurements." } } } } },
-              { "properties": { "connection": { "enum": ["demo"] }, "read": { "title": "Read", "enum": ["system"] } } }
+                    "history": { "type": "string", "title": "Earlier lines", "enum": ["kept", "new"], "ui:enumNames": ["Include", "New lines only"], "default": "kept", "description": "Also records what was logged before you started, where the log keeps it. That is the journal and the kernel's lines dmesg prints, as far back as Zelos keeps data; files, logread, and the system log of a Mac or a PC start at new lines." },
+                    "values": { "type": "string", "title": "Numbers as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Automatic", "On", "Off"], "default": "auto", "description": "Turns numbers a line prints, such as rpm=1450, into signals you can plot. Automatic leaves out system logs and the kernel's lines, which print settings, not measurements." } } } } },
+              { "properties": { "connection": { "enum": ["demo"] }, "read": { "title": "Log", "enum": ["system"] } } }
             ]
           },
           "read": {
@@ -43,11 +43,11 @@
               { "properties": { "read": { "enum": ["system"] } } },
               { "properties": {
                   "read": { "enum": ["file"] },
-                  "path": { "type": "string", "title": "File", "minLength": 1, "description": "The file to follow, such as /var/log/app.log. Rotation keeps working." } },
+                  "path": { "type": "string", "title": "File", "minLength": 1, "description": "The file's path, such as /var/log/app.log. Rotation keeps working." } },
                 "required": ["path"] },
               { "properties": {
                   "read": { "enum": ["command"] },
-                  "command": { "type": "string", "title": "Command", "minLength": 1, "description": "Any command that prints lines, such as dmesg -w or adb logcat. Over SSH it runs in sh on the host." } },
+                  "command": { "type": "string", "title": "Command", "minLength": 1, "description": "A command that keeps printing lines, such as dmesg -w or adb logcat. Over SSH it runs on the device." } },
                 "required": ["command"] }
             ]
           }

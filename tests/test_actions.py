@@ -178,7 +178,7 @@ class TestShowAccessKey:
         assert result["public_key"].startswith("ssh-ed25519 ")
         assert result["install"] == keys.install_line(result["public_key"])
         assert (
-            result["message"] == "Run the install line on the board, in any shell you have there."
+            result["message"] == "Run the install line on the device, in any shell you have there."
         )
         assert (tmp_path / "ssh" / "id_ed25519").is_file()
 
@@ -275,7 +275,7 @@ class TestTestConnection:
         assert result["status"] == "success"
         assert result["message"].endswith(
             " probe is not root and not in systemd-journal, so the journal shows only its own "
-            "entries. On the board, run: sudo usermod -aG systemd-journal probe"
+            "entries. Where the journal is, run: sudo usermod -aG systemd-journal probe"
         )
 
     @pytest.mark.usefixtures("ssh")
@@ -304,7 +304,8 @@ class TestTestConnection:
 
         assert result == {
             "status": "error",
-            "message": "Connected to root@bench-1, but it keeps no log this extension reads.",
+            "message": "Connected to root@bench-1, but it has no system log: no journal, logread "
+            "or readable syslog file. Set Log to A file or A command's output.",
         }
 
     @pytest.mark.usefixtures("ssh")
@@ -316,7 +317,7 @@ class TestTestConnection:
         assert result == {
             "status": "error",
             "message": "root@bench-1 refused the login. Run Show Access Key and add its line to "
-            "the board, or set Key file.",
+            "the device, or set Key file.",
         }
 
     @pytest.mark.usefixtures("ssh")
@@ -342,10 +343,10 @@ class TestTestConnection:
     @pytest.mark.parametrize(
         ("host", "message"),
         [
-            ("-oProxyCommand=x", "Host: '-oProxyCommand=x' is not a host name."),
-            ("-J jump", "Host: '-J jump' is not a host name."),
-            (" ", "Host: enter [user@]host or a Host from your SSH config."),
-            ("", "Host: enter [user@]host or a Host from your SSH config."),
+            ("-oProxyCommand=x", "Address: '-oProxyCommand=x' is not an address."),
+            ("-J jump", "Address: '-J jump' is not an address."),
+            (" ", "Address: enter the device's address, such as me@my-board."),
+            ("", "Address: enter the device's address, such as me@my-board."),
         ],
     )
     def test_a_host_that_is_not_one(

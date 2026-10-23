@@ -305,7 +305,7 @@ class TestBadConfig:
         assert caught.value.code == 1
         errors = [r for r in caplog.records if r.levelno == logging.ERROR]
         assert [r.getMessage() for r in errors] == [
-            "Source 1, Host: enter [user@]host or a Host from your SSH config."
+            "Source 1, Address: enter the device's address, such as me@my-board."
         ]
         assert errors[0].name == "zelos_extension_logs.app"
         assert actions.workers == {}
@@ -323,8 +323,8 @@ class TestBadConfig:
             app.run(stop=threading.Event())
 
         assert [r.getMessage() for r in caplog.records] == [
-            "Source 1, Host: enter [user@]host or a Host from your SSH config.",
-            "Source 2, File: enter the file to follow.",
+            "Source 1, Address: enter the device's address, such as me@my-board.",
+            "Source 2, File: enter the file's path.",
         ]
 
     def test_no_sources(

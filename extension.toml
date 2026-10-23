@@ -1,12 +1,12 @@
 name = "Logs"
 version = "0.1.0"
-description = "Record Linux board logs over SSH (journald or syslog), any log file or command, and convert saved logs to Zelos traces (.trz): every line becomes a log event with its level and program, and printed values can become signals."
+description = "Record logs in Zelos on the same timeline as your data: a device's system log over SSH, this computer's system log, any log file, or any command's output. Convert saved logs to Zelos traces."
 author = "Zelos"
 repository = "https://github.com/zeloscloud/zelos-extension-logs"
 homepage = "https://github.com/zeloscloud/zelos-extension-logs"
 # The app's search and its AI read these, with the name and description; the page shows the first
 # three categories.
-keywords = ["journalctl", "systemd", "rsyslog", "embedded linux", "yocto", "buildroot", "raspberry pi", "busybox", "openwrt", "logread", "dmesg", "kernel", "logcat", "android", "docker", "tail", "replay", "remote", "device logs", "log viewer"]
+keywords = ["journalctl", "systemd", "rsyslog", "embedded linux", "yocto", "buildroot", "raspberry pi", "busybox", "openwrt", "logread", "dmesg", "kernel", "logcat", "android", "docker", "macos", "windows", "remote", "device logs", "log viewer"]
 categories = ["Embedded", "Diagnostics", "Monitoring", "IoT"]
 
 icon = "assets/icon.png"

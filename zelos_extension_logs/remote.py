@@ -310,7 +310,7 @@ _FAILURES: tuple[tuple[tuple[str, ...], str, bool], ...] = (
     ),
     (
         ("permission denied", "too many authentication failures"),
-        "{host} refused the login. Run Show Access Key and add its line to the board, or set "
+        "{host} refused the login. Run Show Access Key and add its line to the device, or set "
         "Key file.",
         True,
     ),

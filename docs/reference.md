@@ -1,26 +1,26 @@
 # Logs reference
 
-Every event Logs writes, how it reads a board and a saved file, every setting, every action, and every health message.
+Every event Logs writes, how it reads a device and a saved file, every setting, every action, and every health message.
 
 ## What it records
 
 All events go under one trace source, `Logs` by default (**Prefix** in Advanced (all sources)).
-Each source has a name, set by **Name**. Without one, the name says where the source reads: the host made safe (`root@bench.local` becomes `bench_local`), `local` or `demo`, then the file's name or the command's program, such as `bench_local syslog` or `local adb`.
+Each source has a name, set by **Name**. Without one, the name says where the source reads: the address made safe (`root@bench.local` becomes `bench_local`), `local` or `demo`, then the file's name or the command's program, such as `bench_local syslog` or `local adb`.
 
 | Event | Holds |
 |---|---|
 | `Logs/<name>/log` | Every entry or line: its level, the program that printed it (`name`), its message, and the file and line when the program sent them. Also the extension's notes on the source, under the name `logs`, each starting with `[logs] `. |
-| `Logs/<name>/<program>` | The values a program printed, when **Printed values as signals** is on. |
-| `Logs/<name>/values` | The values printed in lines that name no program, when **Printed values as signals** is on. |
+| `Logs/<name>/<program>` | The values a program printed, when **Numbers as signals** is on. |
+| `Logs/<name>/values` | The values printed in lines that name no program, when **Numbers as signals** is on. |
 | `Logs/log` | The extension's own log. |
 
 In the Log panel, the **Source** column names where each row came from. **Show Sources** turns it on.
 
-## How it reads a board
+## How it reads a device
 
 ### The system log picks itself
 
-Before every connection, Logs runs one short `sh` probe on the board. It finds:
+Before every connection, Logs runs one short `sh` probe on the device. It finds:
 
 1. **The journal**, when `journalctl` is installed: Logs follows `journalctl -f -o json`.
 2. **BusyBox or OpenWrt syslog**, when `logread` works.
@@ -36,16 +36,16 @@ A word inside the sentence never sets a level: `High Level Software warning` is 
 
 ### Time
 
-- **Journal entries** are placed by the board's monotonic clock, mapped onto this computer's clock for each boot. The probe reads the board's uptime, so history sent at connect lands at its own time. A board whose clock reads 1970 until its network sets it still lines up.
-- **An entry from an earlier boot**, which a resume can bring, takes its wall-clock stamp, shifted by how far the board's clock was from this computer's.
-- **Other lines** take the time they arrive, unless they carry a kernel-style uptime such as `[    1.234567]`. The probe reads the kernel's own clock too, so the buffer `dmesg -w` prints when it starts lands at its own times; lines after that are placed as they arrive. NTP never corrects the kernel's clock, so it drifts a few parts per million from the board's: where the journal measured that drift on a recent kernel line, Logs takes it out, and an older line can still be off by its drift since. The system log places kernel lines exactly.
+- **Journal entries** are placed by the device's monotonic clock, mapped onto this computer's clock for each boot. The probe reads the device's uptime, so history sent at connect lands at its own time. A device whose clock reads 1970 until its network sets it still lines up.
+- **An entry from an earlier boot**, which a resume can bring, takes its wall-clock stamp, shifted by how far the device's clock was from this computer's.
+- **Other lines** take the time they arrive, unless they carry a kernel-style uptime such as `[    1.234567]`. The probe reads the kernel's own clock too, so the buffer `dmesg -w` prints when it starts lands at its own times; lines after that are placed as they arrive. NTP never corrects the kernel's clock, so it drifts a few parts per million from the device's: where the journal measured that drift on a recent kernel line, Logs takes it out, and an older line can still be off by its drift since. The system log places kernel lines exactly.
 
-### History and resume
+### Earlier lines and resume
 
-- **First start**: the journal sends the current boot, as far back as the agent keeps data: its data retention, or an hour before the board's clock when the agent does not say. With **History** set to **New lines only**, it starts at the next entry.
-- **A dropped connection or a reboot of the board**: the journal resumes where it stopped, so nothing the journal still holds is lost.
-- **An agent restart**: the journal resumes at the last position Logs saved, unless **History** is **New lines only**, which starts at the next entry. Logs saves the position every 5 s and when it stops, so an extension that ends without stopping can record up to its last 5 s again. The position is kept in the extension's data directory, which updates keep. A position older than the agent keeps data is not resumed: the source starts with the history again.
-- **The kernel's lines a command prints**, as `dmesg -w` prints its buffer and then follows it: the first start keeps them as far back as the agent keeps data, or with **New lines only** none of them. After a drop, a reboot of the board aside, or an agent restart, the command runs again and Logs leaves out the lines up to the last one it recorded, so none is missed or repeated. Logs saves that line as it saves the journal's position.
+- **First start**: the journal sends the current boot, as far back as the agent keeps data: its data retention, or an hour before the device's clock when the agent does not say. With **Earlier lines** set to **New lines only**, it starts at the next entry.
+- **A dropped connection or a reboot of the device**: the journal resumes where it stopped, so nothing the journal still holds is lost.
+- **An agent restart**: the journal resumes at the last position Logs saved, unless **Earlier lines** is **New lines only**, which starts at the next entry. Logs saves the position every 5 s and when it stops, so an extension that ends without stopping can record up to its last 5 s again. The position is kept in the extension's data directory, which updates keep. A position older than the agent keeps data is not resumed: the source starts with the history again.
+- **The kernel's lines a command prints**, as `dmesg -w` prints its buffer and then follows it: the first start keeps them as far back as the agent keeps data, or with **New lines only** none of them. After a drop, a reboot of the device aside, or an agent restart, the command runs again and Logs leaves out the lines up to the last one it recorded, so none is missed or repeated. Logs saves that line as it saves the journal's position.
 - **logread and files** start at new lines, and other commands print what they print. After a drop, or an agent restart, a note says how long the source was away.
 - **A file over SSH that is not there yet** is followed once it appears, as on this computer. One Logs cannot read is reported and tried again. `tail`'s own messages, such as that the file was replaced, are left out.
 - **A reboot** writes the note `[logs] device restarted`.
@@ -54,9 +54,9 @@ A word inside the sentence never sets a level: `High Level Software warning` is 
 
 Logs runs your system's `ssh` with `BatchMode`, so it never asks for a password. It honors your SSH config: `Host` aliases, `ProxyJump`, `IdentityFile`, `IdentityAgent` and `Include`.
 
-- **Show Access Key** makes a key for this computer, kept in the extension's data directory, and gives the line that adds it to a board. A headless agent uses it with no person's keys on the machine. `ssh` still offers your SSH agent's keys and your default keys too.
+- **Show Access Key** makes a key for this computer, kept in the extension's data directory, and gives the line that adds it to a device. A headless agent uses it with no person's keys on the machine. `ssh` still offers your SSH agent's keys and your default keys too.
 - **Key file** uses one private key and nothing else.
-- **Host key check** trusts any key by default, because a reflashed board gets a new one. **Check known_hosts** refuses a key it does not know.
+- **Host key check** trusts any key by default, because a reflashed device gets a new one. **Check known_hosts** refuses a key it does not know.
 - **Extra ssh options** go first on the `ssh` command line, such as `-J bastion`.
 
 A user that is not root and not in `systemd-journal` sees only its own journal entries. Logs says so, with the line that fixes it: `sudo usermod -aG systemd-journal <user>`.
@@ -111,14 +111,14 @@ The config holds a list of `sources` and one `advanced` group.
 
 | Field | Values | Default |
 |---|---|---|
-| **Connection** | `ssh` (SSH), `local` (This computer), `demo` (Demo device) | `ssh` |
-| **Host** | `[user@]host` or a Host from your SSH config | required for SSH |
-| **Read** | `system` (System log), `file` (File), `command` (Command) | `system` |
-| **File** | The path to follow | required for a file |
-| **Command** | The command to run; over SSH it runs in `sh` on the host | required for a command |
-| **Name** | Letters, digits, spaces, `_` and `-` | made from where it reads |
+| **Read from** (`connection`) | `ssh` (A device over SSH), `local` (This computer), `demo` (Demo device) | `ssh` |
+| **Address** (`host`) | `[user@]host` or a Host from your SSH config | required over SSH |
+| **Log** (`read`) | `system` (System log), `file` (A file), `command` (A command's output) | `system` |
+| **File** (`path`) | The file's path | required for a file |
+| **Command** (`command`) | A command that keeps printing lines; over SSH it runs in `sh` on the device | required for a command |
+| **Name** (`name`) | Letters, digits, spaces, `_` and `-` | made from where it reads |
 
-**Advanced** (each source): SSH port, Key file, Host key check, Extra ssh options, History (`kept` or `new`), and Printed values as signals (`auto`, `on` or `off`).
+**Advanced** (each source): SSH port, Key file, Host key check, Extra ssh options, Earlier lines (`history`: `kept` or `new`), and Numbers as signals (`values`: `auto`, `on` or `off`).
 `auto` turns values off for the system log, whose kernel and daemon lines would make signals of every `pid=`, and on for files and commands, except the kernel's lines, which print settings and addresses. `on` reads them too.
 
 **Advanced (all sources)**: Prefix (default `Logs`) and Extension log level, how much Logs reports about itself.
@@ -145,12 +145,12 @@ Every action except List Hosts, Auto-configure, Test Connection, Show Access Key
 
 | Action | What it does | Read-only |
 |---|---|---|
-| List Hosts | Lists the Hosts in this computer's SSH config, for the **Host** field. | yes |
+| List Hosts | Lists the Hosts in this computer's SSH config, for the **Address** field. | yes |
 | Auto-configure | Keeps the configured sources and adds this computer's system log. | yes |
-| Test Connection | Connects to a host, with a source's SSH port, Key file, Host key check and Extra ssh options, and says what it will read, or what to fix. | no |
-| Show Access Key | Returns this computer's key, made on first use, and the line that adds it to a board, limited to running commands. | no |
+| Test Connection | Connects to a device, with a source's SSH port, Key file, Host key check and Extra ssh options, and says what it will read, or what to fix. | no |
+| Show Access Key | Returns this computer's key, made on first use, and the line that adds it to a device, limited to running commands. | no |
 | Convert Log File | Converts a saved log file to a trace (`.trz`), also while the extension is stopped. Takes `input_file`, `output_file`, `overwrite`, `time_zone`, `year` and `start_time`, and returns the trace and the lines read. | no |
-| Run Command | Runs a shell command on a source's host and returns its output and exit code. | no |
+| Run Command | Runs a shell command where a source reads, on its device or this computer, and returns its output and exit code. | no |
 | Get State | Returns a source's state, what it reads, its counters, its last message and the signals its values became. | yes |
 | Sample | Returns the last lines a source recorded. | yes |
 
@@ -158,10 +158,10 @@ Every action except List Hosts, Auto-configure, Test Connection, Show Access Key
 
 Each failure gives one sentence with the fix, in Get State and as a note in the source's log:
 
-- the host cannot be resolved, refuses the connection, or does not answer;
-- the board refused the login (run Show Access Key);
+- the address cannot be resolved, refuses the connection, or does not answer;
+- the device refused the login (run Show Access Key);
 - the host key is unknown or changed;
-- the board keeps no log Logs reads;
+- no system log is found;
 - the user sees only part of the journal;
 - a file on this computer does not exist yet, or cannot be read;
 - a command finished, so it does not run again until the extension restarts.

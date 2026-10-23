@@ -110,13 +110,17 @@ def _blank(source: Any) -> bool:
 
 @action(
     "Test Connection",
-    "Connect to a host as a source with these SSH settings would, and say what it will read or "
+    "Connect to a device as a source with these SSH settings would, and say what it will read or "
     "what to fix.",
     timeout=probe.TIMEOUT_S + 5,
     standalone=True,
     # Not read-only: its host and ssh options can reach any server or run a local command.
 )
-@action.text("host", title="Host", description="[user@]host, or a Host from your SSH config.")
+@action.text(
+    "host",
+    title="Address",
+    description="The device's address, as you'd type after ssh, such as me@my-board.",
+)
 @action.integer(
     "ssh_port",
     title="SSH port",
@@ -137,7 +141,7 @@ def _blank(source: Any) -> bool:
 @action.select(
     "host_key_policy",
     title="Host key check",
-    description="auto trusts any key, so a reflashed board keeps working; strict refuses a key "
+    description="auto trusts any key, so a reflashed device keeps working; strict refuses a key "
     "known_hosts does not have.",
     choices=["auto", "strict"],
     required=False,
@@ -158,7 +162,7 @@ def test_connection(
     ssh_options: str = "",
 ) -> dict[str, Any]:
     if problem := host_problem(host):
-        return {"status": "error", "message": f"Host: {problem}."}
+        return {"status": "error", "message": f"Address: {problem}."}
     advanced = {
         "ssh_port": ssh_port,
         "key_path": key_path,
@@ -190,7 +194,8 @@ def _test(cfg: SourceConfig) -> dict[str, Any]:
     except probe.NoLog:
         return {
             "status": "error",
-            "message": f"Connected to {cfg.host}, but it keeps no log this extension reads.",
+            "message": f"Connected to {cfg.host}, but it has no system log: no journal, logread or "
+            "readable syslog file. Set Log to A file or A command's output.",
         }
     reads = {
         "journal": f"the journal (systemd {board.systemd})",
@@ -205,7 +210,7 @@ def _test(cfg: SourceConfig) -> dict[str, Any]:
 
 @action(
     "Show Access Key",
-    "This computer's key for boards, made on first use, and the line that adds it to a board.",
+    "This computer's key for devices, made on first use, and the line that adds it to a device.",
     timeout=_STANDALONE_TIMEOUT_S,
     standalone=True,
 )
@@ -219,7 +224,7 @@ def show_access_key() -> dict[str, Any]:
         "status": "success",
         "public_key": public_key,
         "install": keys.install_line(public_key),
-        "message": "Run the install line on the board, in any shell you have there.",
+        "message": "Run the install line on the device, in any shell you have there.",
     }
 
 

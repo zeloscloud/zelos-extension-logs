@@ -79,7 +79,7 @@ class TestDefaults:
     @pytest.mark.parametrize("read", ["file", "command", "replay"])
     def test_the_demo_offers_nothing_but_its_system_log(self, read: str) -> None:
         assert problems({"connection": "demo", "read": read, "path": "/x", "command": "ls"}) == [
-            "Source 1, Read: choose one of system."
+            "Source 1, Log: choose one of system."
         ]
 
     def test_a_file_path_is_trimmed(self) -> None:
@@ -273,34 +273,34 @@ class TestValidation:
 
     def test_missing_host(self) -> None:
         assert problems({"connection": "ssh"}) == [
-            "Source 1, Host: enter [user@]host or a Host from your SSH config."
+            "Source 1, Address: enter the device's address, such as me@my-board."
         ]
 
     def test_blank_host(self) -> None:
         assert problems({"connection": "ssh", "host": "   "}) == [
-            "Source 1, Host: enter [user@]host or a Host from your SSH config."
+            "Source 1, Address: enter the device's address, such as me@my-board."
         ]
 
     @pytest.mark.parametrize("host", ["-oProxyCommand=x", "  -J bastion", "a b", "root@bench 1"])
     def test_host_that_ssh_would_read_as_an_option_or_as_two_words(self, host: str) -> None:
         assert problems({"connection": "ssh", "host": host}) == [
-            f"Source 1, Host: '{host}' is not a host name."
+            f"Source 1, Address: '{host}' is not an address."
         ]
 
     def test_missing_file_path(self) -> None:
         assert problems({"connection": "local", "read": "file"}) == [
-            "Source 1, File: enter the file to follow."
+            "Source 1, File: enter the file's path."
         ]
         assert problems({"connection": "local", "read": "file", "path": "  "}) == [
-            "Source 1, File: enter the file to follow."
+            "Source 1, File: enter the file's path."
         ]
 
     def test_missing_command(self) -> None:
         assert problems({"connection": "local", "read": "command"}) == [
-            "Source 1, Command: enter the command to run."
+            "Source 1, Command: enter a command."
         ]
         assert problems({"connection": "local", "read": "command", "command": " "}) == [
-            "Source 1, Command: enter the command to run."
+            "Source 1, Command: enter a command."
         ]
 
     def test_unclosed_quote_in_ssh_options(self) -> None:
@@ -310,15 +310,15 @@ class TestValidation:
 
     def test_bad_connection(self) -> None:
         assert problems({"connection": "serial"}) == [
-            "Source 1, Connection: choose one of ssh, local, demo."
+            "Source 1, Read from: choose one of ssh, local, demo."
         ]
-        assert problems({}) == ["Source 1, Connection: choose one of ssh, local, demo."]
+        assert problems({}) == ["Source 1, Read from: choose one of ssh, local, demo."]
 
     @pytest.mark.parametrize("read", ["tail", "replay"])
     def test_bad_read(self, read: str) -> None:
         # Replaying a saved file is the replay command, not a source.
         assert problems({"connection": "local", "read": read, "path": "/x.log"}) == [
-            "Source 1, Read: choose one of system, file, command."
+            "Source 1, Log: choose one of system, file, command."
         ]
 
     def test_source_that_is_not_an_object(self) -> None:
@@ -338,8 +338,8 @@ class TestValidation:
             {"connection": "ssh"},
             {"connection": "local", "read": "command"},
         ) == [
-            "Source 2, Host: enter [user@]host or a Host from your SSH config.",
-            "Source 3, Command: enter the command to run.",
+            "Source 2, Address: enter the device's address, such as me@my-board.",
+            "Source 3, Command: enter a command.",
         ]
 
     def test_name_with_characters_the_trace_cannot_hold(self) -> None:
@@ -384,7 +384,7 @@ class TestValidation:
                 {"connection": "ssh", "host": "h", "advanced": {"host_key_policy": "maybe"}},
                 "Source 1, Host key check: choose one of auto, strict.",
             ),
-            ({"connection": "ssh", "host": 5}, "Source 1, Host: must be text."),
+            ({"connection": "ssh", "host": 5}, "Source 1, Address: must be text."),
         ],
     )
     def test_a_rejected_value_is_named_by_its_field(
