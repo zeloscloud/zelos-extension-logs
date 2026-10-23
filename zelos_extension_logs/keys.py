@@ -8,6 +8,10 @@ from pathlib import Path
 
 from .remote import child_env, openssh
 
+# The key runs commands and nothing else. Dropbear ignores a key whose options it does not know,
+# and these predate the shorter `restrict`.
+_LIMITS = "no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty"
+
 
 class KeyFailure(Exception):
     """The key could not be made; the message says why."""
@@ -58,6 +62,6 @@ def install_line(public_key: str) -> str:
     """A shell line that adds the key on a board, run in any session the user already has."""
     return (
         "mkdir -p ~/.ssh && chmod 700 ~/.ssh && "
-        f"echo {shlex.quote(public_key)} >> ~/.ssh/authorized_keys && "
+        f"echo {shlex.quote(f'{_LIMITS} {public_key}')} >> ~/.ssh/authorized_keys && "
         "chmod 600 ~/.ssh/authorized_keys"
     )
