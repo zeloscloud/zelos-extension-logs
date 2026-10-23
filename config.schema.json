@@ -11,7 +11,7 @@
         "type": "object", "title": "Source",
         "properties": {
           "connection": { "type": "string", "title": "Connection", "enum": ["ssh", "local", "demo"], "ui:enumNames": ["SSH", "This computer", "Demo device"], "default": "ssh" },
-          "read": { "type": "string", "title": "Read", "enum": ["system", "file", "command", "replay"], "ui:enumNames": ["System log", "File", "Command output", "Saved file, replayed"], "default": "system", "description": "System log reads the journal, or syslog where there is none, on Linux." },
+          "read": { "type": "string", "title": "Read", "enum": ["system", "file", "command"], "ui:enumNames": ["System log", "File", "Command"], "default": "system", "description": "System log reads the journal, or syslog where there is none, on Linux." },
           "name": { "type": "string", "title": "Name", "description": "How this source appears in the trace. Empty names it after where it reads, such as bench_local. Letters, digits, spaces, _ and -.","pattern": "^[A-Za-z0-9 _-]*$", "maxLength": 64 }
         },
         "required": ["connection"],
@@ -31,13 +31,12 @@
                     "time_source": { "type": "string", "title": "Time", "enum": ["device", "arrival"], "ui:enumNames": ["The device's clock", "When the line arrives"], "default": "device", "description": "The device's clock places rows by the uptime stamped on each line, so a wrong date still lines up. Lines with none use their arrival." },
                     "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Automatic", "On", "Off"], "default": "auto", "description": "Records numbers a line prints, such as rpm=1450, as signals you can plot. Automatic leaves it off for the system log and the kernel's lines, which print settings, not measurements." } } } },
                 "required": ["host"] },
-              { "properties": { "connection": { "enum": ["local"] } },
-                "if": { "properties": { "read": { "const": "replay" } }, "required": ["read"] },
-                "else": { "properties": {
+              { "properties": {
+                  "connection": { "enum": ["local"] },
                   "advanced": { "type": "object", "title": "Advanced", "ui:options": { "collapsed": true }, "properties": {
                     "history": { "type": "string", "title": "History", "enum": ["kept", "new"], "ui:enumNames": ["Earlier lines too", "New lines only"], "default": "kept", "description": "On the first start, also record what was logged earlier this boot. That covers the journal and the kernel's lines dmesg prints, as far back as Zelos keeps data; a file starts at its new lines." },
                     "time_source": { "type": "string", "title": "Time", "enum": ["device", "arrival"], "ui:enumNames": ["The device's clock", "When the line arrives"], "default": "device", "description": "The device's clock places rows by the uptime stamped on each line, so a wrong date still lines up. Lines with none use their arrival." },
-                    "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Automatic", "On", "Off"], "default": "auto", "description": "Records numbers a line prints, such as rpm=1450, as signals you can plot. Automatic leaves it off for the system log and the kernel's lines, which print settings, not measurements." } } } } } },
+                    "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Automatic", "On", "Off"], "default": "auto", "description": "Records numbers a line prints, such as rpm=1450, as signals you can plot. Automatic leaves it off for the system log and the kernel's lines, which print settings, not measurements." } } } } },
               { "properties": { "connection": { "enum": ["demo"] }, "read": { "title": "Read", "enum": ["system"] } } }
             ]
           },
@@ -51,14 +50,7 @@
               { "properties": {
                   "read": { "enum": ["command"] },
                   "command": { "type": "string", "title": "Command", "minLength": 1, "description": "Any command that prints lines, such as dmesg -w or adb logcat. Over SSH it runs in sh on the host." } },
-                "required": ["command"] },
-              { "properties": {
-                  "read": { "enum": ["replay"] },
-                  "path": { "type": "string", "title": "File", "minLength": 1, "description": "A saved log file on this computer, plain or compressed with gzip, bzip2, xz or zstd. Its lines play at the pace they were printed, starting now.", "ui:widget": "file-picker" },
-                  "advanced": { "type": "object", "title": "Advanced", "ui:options": { "collapsed": true }, "properties": {
-                    "time_zone": { "type": "string", "title": "Time zone", "description": "The time zone of stamps that print none, such as Europe/Berlin. A replay needs it only across a daylight-saving change; empty uses this computer's." },
-                    "values": { "type": "string", "title": "Printed values as signals", "enum": ["auto", "on", "off"], "ui:enumNames": ["Automatic", "On", "Off"], "default": "auto", "description": "Records numbers a line prints, such as rpm=1450, as signals you can plot. Automatic leaves it off for the system log and the kernel's lines, which print settings, not measurements." } } } },
-                "required": ["path"] }
+                "required": ["command"] }
             ]
           }
         },
@@ -78,7 +70,6 @@
     { "sources": [{ "connection": "ssh", "host": "root@bench-1" }] },
     { "sources": [{ "connection": "ssh", "host": "root@bench-1", "read": "file", "path": "/var/log/acme/run.log", "name": "bench-1 run" }] },
     { "sources": [{ "connection": "local", "read": "command", "command": "adb logcat", "name": "tablet" }] },
-    { "sources": [{ "connection": "local", "read": "replay", "path": "/var/log/app.log.1", "advanced": { "time_zone": "Europe/Berlin" } }] },
     { "sources": [{ "connection": "demo" }] }
   ]
 }

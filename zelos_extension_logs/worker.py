@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import BinaryIO, Literal
 
 import zelos_sdk
-from zelos_log_lines import files
 from zelos_log_lines.lines import Line
 from zelos_log_lines.records import Level, LogRecord
 from zelos_log_lines.stream import LogStream, StreamState
@@ -244,8 +243,6 @@ class SourceWorker(threading.Thread):
             self._connected()
             self._follow_journal(demo.lines(self._stop_event, self._now), None)
             return "retry"
-        if self.cfg.read == "replay":
-            return self._replay()
         self.health.state = "connecting"
         board: probe.Probe | None = None
         resumes_at: str | None = None
@@ -336,26 +333,6 @@ class SourceWorker(threading.Thread):
             self._read_history = True
             return "follow"
         return self._ended(process.returncode, err, streamed, kind)
-
-    def _replay(self) -> Outcome:
-        """Write the saved file at its printed pace, once: again, it would repeat its lines."""
-        assert self.cfg.path is not None
-        path = Path(self.cfg.path).expanduser()
-        self.health.reading = "replay"
-        self._connected()
-        try:
-            files.replay(
-                path, self._stream, self._stop_event, timing=self.cfg.timing, now=self._now
-            )
-        except Exception as e:
-            # A damaged compressed file raises its decompressor's own error.
-            reason = e.strerror if isinstance(e, OSError) and e.strerror else e
-            self._fail(f"Cannot read {path}: {reason}.", True)
-            return "done"
-        if not self._stop_event.is_set():
-            self.health.message = "The replay finished. It runs again when the extension restarts."
-            self._note("info", self.health.message)
-        return "done"
 
     def _follow_local(self, path: Path) -> Outcome:
         self.health.reading = "file"

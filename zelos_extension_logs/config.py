@@ -13,7 +13,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from jsonschema import Draft7Validator, ValidationError
 from zelos_log_lines import files
 from zelos_log_lines.naming import unique_name
-from zelos_log_lines.placing import Timing
 
 _SCHEMA = json.loads(
     (Path(__file__).resolve().parent.parent / "config.schema.json").read_text(encoding="utf-8")
@@ -26,17 +25,11 @@ _CHOICES: dict[str, list[str]] = {
 }
 # The advanced settings each connection has: SSH all of them, this computer some, the demo none.
 _ADVANCED: dict[str, dict[str, Any]] = {
-    branch["properties"]["connection"]["enum"][0]: branch.get("else", branch)["properties"]
+    branch["properties"]["connection"]["enum"][0]: branch["properties"]
     .get("advanced", {})
     .get("properties", {})
     for branch in _ITEM["dependencies"]["connection"]["oneOf"]
 }
-# A replayed file's advanced settings, in place of its connection's.
-_REPLAY_ADVANCED: dict[str, Any] = next(
-    branch["properties"]["advanced"]["properties"]
-    for branch in _ITEM["dependencies"]["read"]["oneOf"]
-    if branch["properties"]["read"]["enum"] == ["replay"]
-)
 #: The years a saved file's timing may name: from the epoch to the last a trace's times hold.
 YEARS = range(1970, 2262)
 _SETTINGS: dict[str, Any] = _SCHEMA["properties"]["advanced"]["properties"]
@@ -50,12 +43,11 @@ _ENTER = {
 _READ_FIELDS = {
     "file": ("path", "File"),
     "command": ("command", "Command"),
-    "replay": ("path", "File"),
 }
 _KINDS = {"string": "text", "integer": "a whole number", "object": "a group of settings"}
 
 Connection = Literal["ssh", "local", "demo"]
-Read = Literal["system", "file", "command", "replay"]
+Read = Literal["system", "file", "command"]
 
 
 class ConfigError(Exception):
@@ -85,8 +77,6 @@ class SourceConfig:
     values: bool
     # Automatic reads none from the kernel's lines, which print settings and addresses.
     kernel_values: bool
-    # What a replayed file's stamps leave out; None for every other read.
-    timing: Timing | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,7 +138,7 @@ def source(item: dict[str, Any]) -> SourceConfig:
     connection: Connection = item["connection"]
     read: Read = item.get("read", "system")
     advanced = {name: schema.get("default") for name, schema in _ADVANCED["ssh"].items()}
-    known = _REPLAY_ADVANCED.keys() if read == "replay" else _ADVANCED[connection].keys()
+    known = _ADVANCED[connection].keys()
     given = item.get("advanced")
     if isinstance(given, dict):
         advanced.update((k, v) for k, v in given.items() if k in known)
@@ -158,7 +148,7 @@ def source(item: dict[str, Any]) -> SourceConfig:
         connection=connection,
         read=read,
         host=((item.get("host") or "").strip() or None) if connection == "ssh" else None,
-        path=item["path"].strip() if read in ("file", "replay") else None,
+        path=item["path"].strip() if read == "file" else None,
         command=item.get("command") if read == "command" else None,
         ssh_port=advanced.get("ssh_port"),
         key_path=advanced.get("key_path") or None,
@@ -169,8 +159,6 @@ def source(item: dict[str, Any]) -> SourceConfig:
         # The demo prints values to show them; it has no Advanced settings.
         values=connection == "demo" or (read != "system" if values == "auto" else values == "on"),
         kernel_values=connection == "demo" or values == "on",
-        # A replay starts now, so a start is moot; the year comes from the file's last change.
-        timing=Timing(zone(advanced.get("time_zone"))) if read == "replay" else None,
     )
 
 
@@ -260,8 +248,7 @@ def _sentence(error: ValidationError) -> tuple[tuple[Any, ...], str]:
     blank = instance is None or (isinstance(instance, str) and not instance.strip())
     if field in _ENTER and blank:
         # Inside a `read` branch, the parent error's instance is the source.
-        item: Any = error.parent.instance if error.parent is not None else {}
-        wording = _enter(field, item.get("read") if isinstance(item, dict) else None)
+        wording = _ENTER[field]
     elif "enum" in schema:
         wording = f"choose one of {', '.join(schema['enum'])}"
     elif error.validator == "type":
@@ -304,19 +291,7 @@ def _meaning(index: int, item: dict[str, Any]) -> Iterator[tuple[tuple[Any, ...]
     if read in _READ_FIELDS:
         field, title = _READ_FIELDS[read]
         if not item[field].strip():
-            yield ("sources", index, field), f"{where}, {title}: {_enter(field, read)}."
-    if read == "replay":
-        try:
-            zone(item.get("advanced", {}).get("time_zone"))
-        except ValueError as e:
-            yield (
-                ("sources", index, "advanced", "time_zone"),
-                f"{where}, {_REPLAY_ADVANCED['time_zone']['title']}: {e}.",
-            )
-
-
-def _enter(field: str, read: object) -> str:
-    return "enter the file to replay" if (field, read) == ("path", "replay") else _ENTER[field]
+            yield ("sources", index, field), f"{where}, {title}: {_ENTER[field]}."
 
 
 def _position(key: tuple[Any, ...]) -> float:
@@ -339,7 +314,7 @@ def default_name(cfg: SourceConfig) -> str:
     if cfg.connection == "demo":
         return "demo"
     base = "local" if cfg.connection == "local" else _host_name(cfg.host or "")
-    if cfg.read in ("file", "replay") and cfg.path:
+    if cfg.read == "file" and cfg.path:
         return f"{base} {files.name_for(Path(cfg.path.replace(chr(92), '/')))}"
     if cfg.read == "command" and cfg.command:
         words = cfg.command.split()

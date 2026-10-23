@@ -93,8 +93,6 @@ uv run main.py replay app.log
 
 `replay` writes the file's lines into the agent at the pace they were printed, starting now. Ctrl-C stops it, and it prints how many lines it replayed.
 
-A replay source does the same while the extension runs: on **This computer**, set **Read** to **Saved file, replayed**. It replays the file once, then ends. It replays again when the extension restarts.
-
 ### Where each row goes
 
 - **A printed time** places the row.
@@ -107,7 +105,7 @@ A gzip file's last change is the one gzip recorded, so a rotated log keeps its o
 
 Give the zone, the year and the start to `convert` with `--zone`, `--year` and `--start`, or to the action with **Time zone**, **Year** and **Start time**.
 The year is the year of the last stamp that prints none. The start is an ISO 8601 time with its offset, such as `2026-10-21T14:03:01+02:00`.
-A replay keeps the gaps between rows and moves them all so the first is now, so it takes no start, and it takes the year from the file's last change. `replay` takes `--zone`, and a replay source's **Advanced** has **Time zone**.
+A replay keeps the gaps between rows and moves them all so the first is now, so it takes no start, and it takes the year from the file's last change. `replay` takes `--zone`.
 
 ## Configuration
 
@@ -117,14 +115,13 @@ The config holds a list of `sources` and one `advanced` group.
 |---|---|---|
 | **Connection** | `ssh` (SSH), `local` (This computer), `demo` (Demo device) | `ssh` |
 | **Host** | `[user@]host` or a Host from your SSH config | required for SSH |
-| **Read** | `system` (System log), `file` (File), `command` (Command output), `replay` (Saved file, replayed; this computer only) | `system` |
-| **File** | The path to follow, or the saved file to replay | required for a file and a replay |
+| **Read** | `system` (System log), `file` (File), `command` (Command) | `system` |
+| **File** | The path to follow | required for a file |
 | **Command** | The command to run; over SSH it runs in `sh` on the host | required for a command |
 | **Name** | Letters, digits, spaces, `_` and `-` | made from where it reads |
 
 **Advanced** (each source): SSH port, Key file, Host key check, Extra ssh options, History (`kept` or `new`), Time (`device` or `arrival`), and Printed values as signals (`auto`, `on` or `off`).
-`auto` turns values off for the system log, whose kernel and daemon lines would make signals of every `pid=`, and on for files, commands and replays, except the kernel's lines, which print settings and addresses. `on` reads them too.
-A replay also has Time zone (`time_zone`), described in [Where each row goes](#where-each-row-goes).
+`auto` turns values off for the system log, whose kernel and daemon lines would make signals of every `pid=`, and on for files and commands, except the kernel's lines, which print settings and addresses. `on` reads them too.
 
 **Advanced (all sources)**: Prefix (default `Logs`) and Extension log level, how much Logs reports about itself.
 
@@ -142,10 +139,6 @@ The system log of **This computer** is read on Linux. On macOS and Windows, read
 
 ```json
 { "sources": [{ "connection": "local", "read": "command", "command": "adb logcat", "name": "tablet" }] }
-```
-
-```json
-{ "sources": [{ "connection": "local", "read": "replay", "path": "/var/log/app.log.1", "advanced": { "time_zone": "Europe/Berlin" } }] }
 ```
 
 ## Actions
@@ -173,7 +166,6 @@ Each failure gives one sentence with the fix, in Get State and as a note in the 
 - the board keeps no log Logs reads;
 - the user sees only part of the journal;
 - a file on this computer does not exist yet, or cannot be read;
-- a command finished, so it does not run again until the extension restarts;
-- a saved file cannot be read, so it is not replayed until the extension restarts.
+- a command finished, so it does not run again until the extension restarts.
 
 A dropped connection is tried again after 1 s, then up to once a minute. A refused login is tried once a minute.
