@@ -193,12 +193,13 @@ class SourceWorker(threading.Thread):
     def _follow(self) -> None:
         delay = _FIRST_RETRY_S
         while not self._stop_event.is_set():
+            started = self._now()
             try:
-                streamed, outcome = self._session()
+                outcome = self._session()
             except Exception:
                 # A bug must not end the source: it is logged and the source tries again.
                 logger.exception("%s: unexpected error", self.cfg.name)
-                streamed, outcome = False, "retry"
+                outcome = "retry"
             if self._stop_event.is_set():
                 break
             if outcome == "done":
@@ -207,16 +208,19 @@ class SourceWorker(threading.Thread):
             self.health.state = "waiting"
             self.health.reconnects += 1
             self._dropped_at = self._dropped_at or self._now()
-            delay = _FIRST_RETRY_S if streamed else min(delay * 2, _LONGEST_RETRY_S)
+            # A session that ends within the longest wait backs off, whatever it printed first.
+            lasted = self._now() - started >= _LONGEST_RETRY_S * 1e9
+            delay = _FIRST_RETRY_S if lasted else min(delay * 2, _LONGEST_RETRY_S)
             self._stop_event.wait(_LONGEST_RETRY_S if outcome == "lasting" else delay)
         self.health.state = "stopped"
 
-    def _session(self) -> tuple[bool, Outcome]:
-        """Probe, follow, and return whether anything streamed and how the session ended."""
+    def _session(self) -> Outcome:
+        """Probe, follow, and return how the session ended."""
         self._refused = False
         if self.cfg.connection == "demo":
             self._connected()
-            return self._follow_journal(demo.lines(self._stop_event, self._now), None), "retry"
+            self._follow_journal(demo.lines(self._stop_event, self._now), None)
+            return "retry"
         if self.cfg.read == "replay":
             return self._replay()
         self.health.state = "connecting"
@@ -224,14 +228,14 @@ class SourceWorker(threading.Thread):
         resumes_at: str | None = None
         if self.cfg.read == "system":
             if self.cfg.connection == "local" and sys.platform != "linux":
-                return False, self._failed(
+                return self._failed(
                     remote.Failure(
                         "The system log is read on Linux. Read a file or a command here.", True
                     )
                 )
             probed = self._probe()
             if isinstance(probed, remote.Failure):
-                return False, self._failed(probed)
+                return self._failed(probed)
             board = probed
             self._user = board.user or self._user
             try:
@@ -239,7 +243,7 @@ class SourceWorker(threading.Thread):
                     board, self._resume_cursor(), self.cfg.history, self._retention
                 )
             except probe.NoLog:
-                return False, self._failed(
+                return self._failed(
                     remote.Failure(
                         "No log found: no journalctl, no working logread, and no readable "
                         "/var/log/messages or /var/log/syslog.",
@@ -257,7 +261,7 @@ class SourceWorker(threading.Thread):
             if self.cfg.connection == "ssh":
                 probed = self._probe()
                 if isinstance(probed, remote.Failure):
-                    return False, self._failed(probed)
+                    return self._failed(probed)
                 board = probed
                 self._user = board.user or self._user
                 self._note_restart(board)
@@ -271,7 +275,7 @@ class SourceWorker(threading.Thread):
         self._note_gap(kind)
         process = self._start(command)
         if isinstance(process, remote.Failure):
-            return False, self._failed(process)
+            return self._failed(process)
         said: deque[bytes] = deque(maxlen=_SAID_LINES)
         drain = threading.Thread(target=said.extend, args=(process.stderr or (),), daemon=True)
         drain.start()
@@ -286,9 +290,9 @@ class SourceWorker(threading.Thread):
         self._process = None
         drain.join(1.0)
         err = b"".join(said).decode("utf-8", "replace")
-        return streamed, self._ended(process.returncode, err, streamed, kind)
+        return self._ended(process.returncode, err, streamed, kind)
 
-    def _replay(self) -> tuple[bool, Outcome]:
+    def _replay(self) -> Outcome:
         """Write the saved file at its printed pace, once: again, it would repeat its lines."""
         assert self.cfg.path is not None
         path = Path(self.cfg.path).expanduser()
@@ -302,21 +306,20 @@ class SourceWorker(threading.Thread):
             # A damaged compressed file raises its decompressor's own error.
             reason = e.strerror if isinstance(e, OSError) and e.strerror else e
             self._fail(f"Cannot read {path}: {reason}.", True)
-            return False, "done"
+            return "done"
         if not self._stop_event.is_set():
             self.health.message = "The replay finished. It runs again when the extension restarts."
             self._note("info", self.health.message)
-        return self.health.lines > 0, "done"
+        return "done"
 
-    def _follow_local(self, path: Path) -> tuple[bool, Outcome]:
+    def _follow_local(self, path: Path) -> Outcome:
         self.health.reading = "file"
         self._note_gap("file")
         try:
-            return self._follow_text(self._appended(path)), "retry"
+            self._follow_text(self._appended(path))
+            return "retry"
         except OSError as e:
-            return False, self._failed(
-                remote.Failure(f"Cannot read {path}: {e.strerror or e}.", False)
-            )
+            return self._failed(remote.Failure(f"Cannot read {path}: {e.strerror or e}.", False))
 
     def _appended(self, path: Path) -> Iterator[tuple[bytes, int]]:
         """What is added to the file at `path`, as `tail -F` follows it: from its end, or from its
