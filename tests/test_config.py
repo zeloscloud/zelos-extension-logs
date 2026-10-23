@@ -3,12 +3,10 @@
 import json
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from zelos_log_lines.placing import Timing
 
 from zelos_extension_logs import config
 from zelos_extension_logs.config import ConfigError
@@ -50,7 +48,6 @@ class TestDefaults:
             time_source="device",
             values=False,
             kernel_values=False,
-            timing=None,
         )
 
     def test_local_file(self) -> None:
@@ -87,10 +84,9 @@ class TestDefaults:
             "Source 1, Read: choose one of system."
         ]
 
-    @pytest.mark.parametrize("read", ["file", "replay"])
-    def test_a_file_path_is_trimmed(self, read: str) -> None:
+    def test_a_file_path_is_trimmed(self) -> None:
         (cfg,) = parse_sources(
-            {"connection": "local", "read": read, "path": " /var/log/x.log "}
+            {"connection": "local", "read": "file", "path": " /var/log/x.log "}
         ).sources
 
         assert cfg.path == "/var/log/x.log"
@@ -162,7 +158,6 @@ class TestValues:
             ({"connection": "local", "read": "system"}, False),
             ({"connection": "local", "read": "file", "path": "/x"}, True),
             ({"connection": "local", "read": "command", "command": "ls"}, True),
-            ({"connection": "local", "read": "replay", "path": "/x"}, True),
         ],
     )
     def test_auto(self, item: dict[str, Any], expected: bool) -> None:
@@ -212,7 +207,6 @@ class TestDefaultNames:
 
         assert names(item) == ["local pump"]
 
-    @pytest.mark.parametrize("read", ["file", "replay"])
     @pytest.mark.parametrize(
         ("path", "name"),
         [
@@ -221,10 +215,8 @@ class TestDefaultNames:
             ("/var/log/app.log.1", "local app_log_1"),
         ],
     )
-    def test_a_file_is_named_as_its_converted_trace_names_it(
-        self, read: str, path: str, name: str
-    ) -> None:
-        assert names({"connection": "local", "read": read, "path": path}) == [name]
+    def test_a_file_is_named_as_its_converted_trace_names_it(self, path: str, name: str) -> None:
+        assert names({"connection": "local", "read": "file", "path": path}) == [name]
 
     def test_command_name_is_the_host_and_the_program(self) -> None:
         item = {"connection": "local", "read": "command", "command": "/usr/bin/adb logcat -v time"}
@@ -318,9 +310,11 @@ class TestValidation:
         ]
         assert problems({}) == ["Source 1, Connection: choose one of ssh, local, demo."]
 
-    def test_bad_read(self) -> None:
-        assert problems({"connection": "local", "read": "tail"}) == [
-            "Source 1, Read: choose one of system, file, command, replay."
+    @pytest.mark.parametrize("read", ["tail", "replay"])
+    def test_bad_read(self, read: str) -> None:
+        # Replaying a saved file is the replay command, not a source.
+        assert problems({"connection": "local", "read": read, "path": "/x.log"}) == [
+            "Source 1, Read: choose one of system, file, command."
         ]
 
     def test_source_that_is_not_an_object(self) -> None:
@@ -404,90 +398,6 @@ class TestValidation:
     def test_an_unknown_setting_for_all_sources(self) -> None:
         assert problems({"connection": "demo"}, verbose=1) == [
             "Advanced (all sources): unknown setting verbose."
-        ]
-
-
-class TestReplay:
-    LOCAL = {"connection": "local", "read": "replay", "path": "/var/log/app.log"}
-
-    def test_a_saved_file_on_this_computer(self) -> None:
-        (cfg,) = parse_sources(self.LOCAL).sources
-
-        assert (cfg.connection, cfg.read, cfg.path, cfg.command, cfg.name) == (
-            "local",
-            "replay",
-            "/var/log/app.log",
-            None,
-            "local app",
-        )
-        assert cfg.timing == Timing()
-
-    def test_its_timing(self) -> None:
-        (cfg,) = parse_sources(
-            {
-                **self.LOCAL,
-                "advanced": {"time_zone": " Europe/Berlin ", "values": "off"},
-            }
-        ).sources
-
-        assert cfg.timing == Timing(ZoneInfo("Europe/Berlin"))
-        assert cfg.values is False
-
-    def test_blank_timing_is_left_to_the_file(self) -> None:
-        (cfg,) = parse_sources({**self.LOCAL, "advanced": {"time_zone": "  "}}).sources
-
-        assert cfg.timing == Timing()
-
-    def test_a_replay_has_no_year_or_start(self) -> None:
-        advanced = {"year": 2025, "start_time": "2026-10-21T14:03:01+02:00"}
-        (cfg,) = parse_sources({**self.LOCAL, "advanced": advanced}).sources
-
-        assert cfg.timing == Timing()
-
-    def test_timing_applies_to_a_replay_only(self) -> None:
-        (cfg,) = parse_sources(
-            {
-                "connection": "local",
-                "read": "file",
-                "path": "/var/log/app.log",
-                "advanced": {"time_zone": "Mars/Base"},
-            }
-        ).sources
-
-        assert cfg.timing is None
-
-    def test_the_live_settings_are_not_a_replays(self) -> None:
-        live = {"history": "new", "time_source": "arrival"}
-        (cfg,) = parse_sources({**self.LOCAL, "advanced": live}).sources
-
-        assert (cfg.history, cfg.time_source) == ("kept", "device")
-
-    @pytest.mark.parametrize("read", [None, "system", "file"])
-    def test_the_live_settings_are_checked_for_every_other_read(self, read: str | None) -> None:
-        item = {"connection": "local", "path": "/var/log/app.log", "advanced": {"history": "all"}}
-        if read:
-            item["read"] = read
-
-        assert problems(item) == ["Source 1, History: choose one of kept, new."]
-
-    def test_the_file_is_required(self) -> None:
-        for item in (
-            {"connection": "local", "read": "replay"},
-            {**self.LOCAL, "path": ""},
-            {**self.LOCAL, "path": "  "},
-        ):
-            assert problems(item) == ["Source 1, File: enter the file to replay."]
-
-    def test_on_this_computer_only(self) -> None:
-        item = {"connection": "ssh", "host": "root@bench-1"}
-
-        assert problems({**item, "read": "replay", "path": "/var/log/app.log"}) == [
-            "Source 1, Read: choose one of system, file, command."
-        ]
-
-    def test_a_time_zone_it_cannot_read(self) -> None:
-        assert problems({**self.LOCAL, "advanced": {"time_zone": "Mars/Base"}}) == [
-            "Source 1, Time zone: 'Mars/Base' is not an IANA time zone, such as Europe/Berlin."
         ]
 
 
