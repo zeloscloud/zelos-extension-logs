@@ -49,6 +49,7 @@ Set **Time** to **When the line arrives** to place every row by arrival.
 - **An agent restart**: the journal resumes at the last position Logs saved, unless **History** is **New lines only**, which starts at the next entry. Logs saves the position every 5 s and when it stops, so an extension that ends without stopping can record up to its last 5 s again. The position is kept in the extension's data directory, which updates keep. A position older than the agent keeps data is not resumed: the source starts with the history again.
 - **The kernel's lines a command prints**, as `dmesg -w` prints its buffer and then follows it: the first start keeps them as far back as the agent keeps data, or with **New lines only** none of them. After a drop, a reboot of the board aside, or an agent restart, the command runs again and Logs leaves out the lines up to the last one it recorded, so none is missed or repeated. Logs saves that line as it saves the journal's position.
 - **logread and files** start at new lines, and other commands print what they print. After a drop, or an agent restart, a note says how long the source was away.
+- **A file over SSH that is not there yet** is followed once it appears, as on this computer. One Logs cannot read is reported and tried again. `tail`'s own messages, such as that the file was replaced, are left out.
 - **A reboot** writes the note `[logs] device restarted`.
 
 ### Access

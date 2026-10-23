@@ -169,7 +169,7 @@ def test_each_source_gets_a_worker_under_its_name(
     events = trace_file.events()
     assert any(r["message"] == "started" for r in events["bench-1/log"])
     assert "demo/log" in events
-    assert fakes.command(1) == "tail -n 0 -F /x"
+    assert fakes.command(1) == "tail -n 0 -F /x 2>/dev/null"
     fakes.close()
 
 

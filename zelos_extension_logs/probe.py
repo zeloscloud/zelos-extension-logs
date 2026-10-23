@@ -9,7 +9,7 @@ from typing import Literal
 # One POSIX sh line, run before every stream. BusyBox prints `date +%N` as is, so there the clock is
 # whole seconds. `logread` is tried, not just found: without syslogd's shared-memory buffer it
 # exists and fails. `end` proves the output arrived whole.
-SCRIPT = (
+_BODY = (
     'p() { printf \'%s=%s\\n\' "$1" "$2"; }; '
     'p uid "$(id -u 2>/dev/null)"; '
     'p user "$(id -un 2>/dev/null)"; '
@@ -28,8 +28,8 @@ SCRIPT = (
     'p clock "$(date +%s 2>/dev/null)"; '
     'p clock_ns "$(date +%s%N 2>/dev/null)"; '
     "p uptime \"$(cut -d' ' -f1 /proc/uptime 2>/dev/null)\"; "
-    "p end 1"
 )
+SCRIPT = f"{_BODY}p end 1"
 
 # Groups that read every journal entry. Anyone else sees only their own.
 _JOURNAL_READERS = {"root", "systemd-journal", "adm", "wheel"}
@@ -71,6 +71,8 @@ class Probe:
     # The oldest line in the kernel's buffer, as dmesg prints it first: a command whose first
     # stamped line is this one prints this kernel's lines.
     kernel_oldest: str = ""
+    # The file a source follows: ok, missing, directory or unreadable; empty when none was asked.
+    path: str = ""
 
     @property
     def monotonic_ns(self) -> int | None:
@@ -104,6 +106,17 @@ def partial(user: str) -> str:
     return (
         f"{user} is not root and not in systemd-journal, so the journal shows only its own "
         f"entries. On the board, run: sudo usermod -aG systemd-journal {user}"
+    )
+
+
+def script(path: str | None = None) -> str:
+    """The probe, which for a file also says whether the file is there to read."""
+    if path is None:
+        return SCRIPT
+    q = shlex.quote(path)
+    return (
+        f"{_BODY}if [ -d {q} ]; then p path directory; elif [ -r {q} ]; then p path ok; "
+        f"elif [ -e {q} ]; then p path unreadable; else p path missing; fi; p end 1"
     )
 
 
@@ -142,6 +155,7 @@ def parse(output: str, host_ns: int) -> Probe:
         kernel_lag_ns=_lag_ns(values.get("kernel", "")),
         kernel_oldest=values.get("dmesg", ""),
         host_ns=host_ns,
+        path=values.get("path", ""),
     )
 
 
@@ -222,6 +236,7 @@ def system_log(
     raise NoLog
 
 
-def tail(path: str) -> str:
-    """Follow a file from its next line, through rotation."""
-    return f"tail -n 0 -F {shlex.quote(path)}"
+def tail(path: str, *, whole: bool = False) -> str:
+    """Follow a file through rotation from its next line, or `whole` from its first. tail's own
+    words, such as that the file was replaced, are no lines of the file."""
+    return f"tail -n {'+1' if whole else '0'} -F {shlex.quote(path)} 2>/dev/null"

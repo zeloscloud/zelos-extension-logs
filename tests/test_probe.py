@@ -298,9 +298,9 @@ class TestParse:
         assert isinstance(board.partial_journal, bool)
 
 
-def run_script(shell: str, path: str) -> str:
+def run_script(shell: str, path: str, script: str = probe.SCRIPT) -> str:
     done = subprocess.run(
-        [shell, "-c", probe.SCRIPT],
+        [shell, "-c", script],
         capture_output=True,
         text=True,
         env={"PATH": path},
@@ -327,6 +327,28 @@ class TestScript:
             assert found is not None
             (directory / name).symlink_to(found)
         return directory
+
+    @pytest.mark.parametrize("shell", SHELLS)
+    def test_says_whether_a_file_is_there_to_read(
+        self, shell: str, tools: Path, tmp_path: Path
+    ) -> None:
+        assert sys.platform != "win32"
+        readable = tmp_path / "app log"
+        readable.write_text("x\n")
+        unreadable = tmp_path / "secret.log"
+        unreadable.write_text("x\n")
+        unreadable.chmod(0)
+        if os.access(unreadable, os.R_OK):
+            pytest.skip("root reads every file")
+        cases = {
+            str(readable): "ok",
+            str(tmp_path): "directory",
+            str(unreadable): "unreadable",
+            str(tmp_path / "later.log"): "missing",
+        }
+        for path, state in cases.items():
+            board = probe.parse(run_script(shell, str(tools), probe.script(path)), 0)
+            assert board.path == state, path
 
     @pytest.mark.parametrize("shell", SHELLS)
     def test_runs_under_every_posix_shell(self, shell: str, tools: Path) -> None:
@@ -474,12 +496,12 @@ class TestSystemLog:
     def test_file(self) -> None:
         log = system_log(make(files=("/var/log/messages", "/var/log/syslog")), None, "kept")
 
-        assert (log.kind, log.command) == ("file", "tail -n 0 -F /var/log/messages")
+        assert (log.kind, log.command) == ("file", "tail -n 0 -F /var/log/messages 2>/dev/null")
 
     def test_a_file_name_is_quoted(self) -> None:
         log = system_log(make(files=("/var/log/my log",)), None, "kept")
 
-        assert log.command == "tail -n 0 -F '/var/log/my log'"
+        assert log.command == "tail -n 0 -F '/var/log/my log' 2>/dev/null"
 
     @pytest.mark.parametrize("history", ["kept", "new"])
     def test_a_board_with_no_log(self, history: Literal["kept", "new"]) -> None:
