@@ -1349,7 +1349,9 @@ class TestBackoff:
 
         assert self.run(rig, 1) == [60.0]
 
-    def test_a_session_that_streamed_starts_the_wait_again(self, make: Callable[..., Rig]) -> None:
+    def test_a_session_that_stayed_up_a_minute_starts_the_wait_again(
+        self, make: Callable[..., Rig]
+    ) -> None:
         rig = make(
             None,
             FakeProcess("", "Connection refused", 255),
@@ -1358,8 +1360,26 @@ class TestBackoff:
             journal_session(entry(CURSOR_1, 400, "a")),
             FakeProcess("", "Connection refused", 255),
         )
+        sessions = rig.worker._session
+        count = iter(range(1, 100))
+
+        def third_stays_up() -> worker.Outcome:
+            outcome = sessions()
+            if next(count) == 3:
+                rig.clock.advance(60)
+            return outcome
+
+        rig.worker._session = third_stays_up  # type: ignore[method-assign]
 
         assert self.run(rig, 4) == [2.0, 4.0, 1.0, 2.0]
+
+    def test_a_command_that_fails_at_once_backs_off_though_it_printed(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        usage = "dmesg: option requires an argument -- 'f'\n"
+        rig = make(command("dmesg -f"), *[FakeProcess(usage, "", 1) for _ in range(5)])
+
+        assert self.run(rig, 5) == [2.0, 4.0, 8.0, 16.0, 32.0]
 
     def test_each_drop_is_counted(self, make: Callable[..., Rig]) -> None:
         rig = make(None, *[FakeProcess("", "Connection refused", 255) for _ in range(3)])
