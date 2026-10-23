@@ -35,9 +35,9 @@ YEARS = range(1970, 2262)
 _SETTINGS: dict[str, Any] = _SCHEMA["properties"]["advanced"]["properties"]
 # What a missing or blank field asks for.
 _ENTER = {
-    "host": "enter [user@]host or a Host from your SSH config",
-    "path": "enter the file to follow",
-    "command": "enter the command to run",
+    "host": "enter the device's address, such as me@my-board",
+    "path": "enter the file's path",
+    "command": "enter a command",
 }
 # The field each read needs, and its title.
 _READ_FIELDS = {
@@ -166,7 +166,7 @@ def host_problem(host: object) -> str | None:
         return _ENTER["host"]
     # A leading dash would reach ssh as an option.
     if host.strip().startswith("-") or any(c.isspace() for c in host.strip()):
-        return f"'{host}' is not a host name"
+        return f"'{host}' is not an address"
     return None
 
 
@@ -278,7 +278,7 @@ def _meaning(index: int, item: dict[str, Any]) -> Iterator[tuple[tuple[Any, ...]
     connection, read = item["connection"], item.get("read", "system")
     if connection == "ssh":
         if problem := host_problem(item["host"]):
-            yield ("sources", index, "host"), f"{where}, Host: {problem}."
+            yield ("sources", index, "host"), f"{where}, Address: {problem}."
         try:
             shlex.split(item.get("advanced", {}).get("ssh_options", ""))
         except ValueError:

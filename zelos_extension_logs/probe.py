@@ -107,7 +107,7 @@ def partial(user: str) -> str:
     """What a user who sees only their own journal entries should do about it."""
     return (
         f"{user} is not root and not in systemd-journal, so the journal shows only its own "
-        f"entries. On the board, run: sudo usermod -aG systemd-journal {user}"
+        f"entries. Where the journal is, run: sudo usermod -aG systemd-journal {user}"
     )
 
 

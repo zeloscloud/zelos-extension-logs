@@ -1081,7 +1081,7 @@ class TestResume:
 
 PARTIAL = (
     "probe is not root and not in systemd-journal, so the journal shows only its own entries. "
-    "On the board, run: sudo usermod -aG systemd-journal probe"
+    "Where the journal is, run: sudo usermod -aG systemd-journal probe"
 )
 
 
@@ -1099,7 +1099,7 @@ class TestFailures:
 
         message = (
             "root@bench-1 refused the login. Run Show Access Key and add its line to the "
-            "board, or set Key file."
+            "device, or set Key file."
         )
         assert rig.worker.health.message == message
         assert rig.notes() == [("error", f"[logs] {message}")]
@@ -1186,8 +1186,8 @@ class TestFailures:
         rig.run_until("waiting")
 
         assert rig.worker.health.message == (
-            "No log found: no journalctl, no working logread, and no readable "
-            "/var/log/messages or /var/log/syslog."
+            "No system log found: no journal, logread or readable syslog file. Set Log to A file "
+            "or A command's output."
         )
         assert rig.notes() == [("error", f"[logs] {rig.worker.health.message}")]
         assert len(rig.processes.started) == 1

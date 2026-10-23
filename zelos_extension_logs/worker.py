@@ -265,8 +265,8 @@ class SourceWorker(threading.Thread):
             except probe.NoLog:
                 return self._failed(
                     remote.Failure(
-                        "No log found: no journalctl, no working logread, and no readable "
-                        "/var/log/messages or /var/log/syslog.",
+                        "No system log found: no journal, logread or readable syslog file. Set Log "
+                        "to A file or A command's output.",
                         True,
                     )
                 )

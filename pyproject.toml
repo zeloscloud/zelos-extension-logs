@@ -1,12 +1,12 @@
 [project]
 name = "zelos-extension-logs"
 version = "0.1.0"
-description = "Record Linux board logs over SSH (journald or syslog), any log file or command, and convert saved logs to Zelos traces (.trz): every line becomes a log event with its level and program, and printed values can become signals."
+description = "Record logs in Zelos on the same timeline as your data: a device's system log over SSH, this computer's system log, any log file, or any command's output. Convert saved logs to Zelos traces."
 authors = [{ name = "Zeloscloud", email = "info@zeloscloud.io" }]
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
-keywords = ["zelos", "extension", "logs", "journald", "syslog", "ssh"]
+keywords = ["zelos", "extension", "logs", "journald", "syslog", "ssh", "macos", "windows"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

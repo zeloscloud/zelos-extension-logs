@@ -1,4 +1,4 @@
-"""Zelos Logs: stream logs from Linux boards, files and commands into a Zelos trace."""
+"""Zelos Logs: record a device's or this computer's logs, files and commands in Zelos."""
 
 #: The action namespace and the default trace source. Equals `name` in extension.toml and the
 #: name passed to `zelos_sdk.init`; tests/test_packaging.py pins all three.
