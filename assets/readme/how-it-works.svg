@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="232" viewBox="0 0 800 232" role="img" aria-label="Logs reads a board with your own ssh and installs nothing on it">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#9198a1"/>
+    </marker>
+  </defs>
+  <rect x="0.5" y="0.5" width="799" height="231" rx="12" fill="#0d1117" stroke="#3d444d"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, &quot;Noto Sans&quot;, Helvetica, Arial, sans-serif">
+    <rect x="32" y="40" width="280" height="152" rx="10" fill="#0c2d6b" stroke="#4493f8" stroke-width="1.5"/>
+    <text x="172" y="70" text-anchor="middle" font-size="13" fill="#9198a1">This computer</text>
+    <text x="172" y="98" text-anchor="middle" font-size="18" font-weight="600" fill="#f0f6fc">Zelos with Logs</text>
+    <text x="172" y="134" text-anchor="middle" font-size="14" fill="#f0f6fc">Turns each line into a row,</text>
+    <text x="172" y="156" text-anchor="middle" font-size="14" fill="#f0f6fc">placed by the board's clock</text>
+    <rect x="488" y="40" width="280" height="152" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1.5"/>
+    <text x="628" y="70" text-anchor="middle" font-size="13" fill="#9198a1">Your Linux board</text>
+    <text x="628" y="98" text-anchor="middle" font-size="18" font-weight="600" fill="#f0f6fc">Its own log</text>
+    <text x="628" y="134" text-anchor="middle" font-size="13.5" font-family="ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, monospace" fill="#f0f6fc">journalctl, logread, tail -F</text>
+    <text x="628" y="156" text-anchor="middle" font-size="14" fill="#f0f6fc">Nothing installed</text>
+    <path d="M318 104H480" stroke="#9198a1" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+    <text x="400" y="92" text-anchor="middle" font-size="13" fill="#9198a1">your own ssh</text>
+    <path d="M482 140H320" stroke="#9198a1" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+    <text x="400" y="164" text-anchor="middle" font-size="13" fill="#9198a1">each line as it is written</text>
+  </g>
+</svg>

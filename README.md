@@ -22,16 +22,23 @@ Record the logs of your Linux boards in Zelos, on the same timeline as everythin
 
 Logs runs on Linux, macOS and Windows, with Zelos 26.0.9 or later.
 
+## How it works
+
+![Zelos with Logs on this computer reaches a Linux board with your own ssh. The board's own log tools, journalctl, logread or tail -F, send back each line as it is written, and nothing is installed on the board.](assets/readme/how-it-works.svg)
+
+Logs starts the board's own log reader over your `ssh` and records each line as it arrives, placed by the board's clock. The reader stops when the connection ends.
+
 ## Get started
 
 1. Install **Logs** from Extensions and open its settings.
-2. Set **Host** to a board, such as `root@my-board`, or pick one from your SSH config.
+2. Set **Host** to a board, such as `me@my-board`, or pick one from your SSH config.
 3. Press **Save & Start**. The board's log appears under **Logs** in the signal tree. Drag its `log` onto the layout to read it in a Log panel.
 
 ![The demo board in Zelos: each row of the Log panel names the program that printed it, the pump, the co-processor or the kernel, with a watchdog error and two warnings among them, and the pump's rpm plots live below.](assets/readme/live.png)
 
-- **If `ssh root@my-board` works** in a terminal on this computer, it works here. **Test Connection** says what a host will be read from, or what to fix.
+- **If `ssh me@my-board` works** in a terminal on this computer, it works here. **Test Connection** says what a host will be read from, or what to fix.
 - **No access yet?** Run **Show Access Key** and paste its line into any shell on the board, even a serial console.
+- **Log in as a user of your own, not root**, and add it to `systemd-journal` to read the whole journal. Run Command and command sources run as that user.
 - **No board?** Set **Connection** to **Demo device**: a small controller whose pump logs its speed and flow, and which restarts every 90 s with its clock at 1970.
 
 ## Actions
