@@ -3,6 +3,23 @@
 All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the extension uses [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-10-23
+
+### Added
+
+- Record this computer's system log on macOS, the unified log, and on Windows, the System and Application event logs. Each row keeps the entry's level, program and time.
+
+### Changed
+
+- The settings say where a log is and which log it is: Read from (A device over SSH, This computer or Demo device), Address, and Log (System log, A file or A command's output). Earlier lines and Numbers as signals replace History and Printed values as signals. Saved settings keep working.
+- Auto-configure adds this computer's system log on every operating system.
+- Messages and help call the machine Logs reads over SSH a device.
+
+### Removed
+
+- The "Saved file, replayed" source. `replay` on the command line still replays a saved file.
+- The Time setting. Rows always take the device's clock, and a saved Time setting is ignored.
+
 ## [0.1.0] - 2026-10-23
 
 ### Added

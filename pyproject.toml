@@ -1,6 +1,6 @@
 [project]
 name = "zelos-extension-logs"
-version = "0.1.0"
+version = "0.1.1"
 description = "Record logs in Zelos on the same timeline as your data: a device's system log over SSH, this computer's system log, any log file, or any command's output. Convert saved logs to Zelos traces."
 authors = [{ name = "Zeloscloud", email = "info@zeloscloud.io" }]
 readme = "README.md"
