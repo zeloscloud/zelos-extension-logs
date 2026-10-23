@@ -138,7 +138,15 @@ def board(**changes: Any) -> Probe:
         "clock_s": 2_000_000_000,
         "host_ns": 1000 * S,
     }
-    return Probe(**{**fields, **changes})
+    merged: dict[str, Any] = {**fields, **changes}
+    # A board that never slept: its journal's clocks agree with its uptime.
+    clock_s, uptime_ns = merged["clock_s"], merged["uptime_ns"]
+    clock_ns = merged.setdefault("clock_ns", None if clock_s is None else clock_s * S)
+    if "journal_gap_ns" not in merged:
+        merged["journal_gap_ns"] = (
+            None if clock_ns is None or uptime_ns is None else clock_ns - uptime_ns
+        )
+    return Probe(**merged)
 
 
 class TestPlacement:
@@ -226,8 +234,8 @@ class TestPlacement:
         assert placement.place(entry_at(6), 78 * S) == 78 * S
         assert placement.place(entry_at(8), 80 * S) == 80 * S
 
-    def test_a_probe_without_an_uptime_seeds_nothing(self) -> None:
-        placement = Placement(board(uptime_ns=None))
+    def test_a_probe_without_the_journals_clocks_seeds_nothing(self) -> None:
+        placement = Placement(board(journal_gap_ns=None))
 
         assert placement.place(entry_at(100), 1000 * S) == 1000 * S
 
@@ -279,6 +287,28 @@ class TestPlacement:
         ]
 
         assert placed == [600 * S, 800 * S, int(999.9 * S)]
+
+    def test_after_a_sleep_history_lands_late_never_early(self) -> None:
+        # Asleep 1000 s before the probe: the uptime counts it, the monotonic clock does not.
+        clock = 2_000_000_000
+        placement = Placement(board(uptime_ns=1500 * S, journal_gap_ns=(clock - 500) * S))
+
+        before = placement.place(entry_at(100, real_s=clock - 1400), 1000 * S)
+        after = placement.place(entry_at(450, real_s=clock - 50), 1000 * S)
+
+        # Written 1400 s and 50 s before the probe answered.
+        assert before == 600 * S
+        assert after == 950 * S
+
+    def test_a_sleep_after_the_probe_is_placed_as_it_arrives(self) -> None:
+        clock = 2_000_000_000
+        placement = Placement(board())
+        placement.place(entry_at(499, real_s=clock - 1), 1000 * S)
+
+        # Asleep 5 s: the wall clock moved 6 s, the monotonic clock 1 s.
+        placed = placement.place(entry_at(500, real_s=clock + 5), 1006 * S + 400_000_000)
+
+        assert placed == 1006 * S + 400_000_000
 
     def test_boots_do_not_share_a_clock(self) -> None:
         placement = Placement(None)

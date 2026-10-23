@@ -1,13 +1,14 @@
 """What a board keeps: which log to follow, who we are there, and its clock."""
 
+import json
 import shlex
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Literal
 
-# One POSIX sh line, run before every stream. BusyBox prints `date +%N` as nothing, so the clock is
-# whole seconds and uptime gives the fine part. `logread` is tried, not just found: without
-# syslogd's shared-memory buffer it exists and fails. `end` proves the output arrived whole.
+# One POSIX sh line, run before every stream. BusyBox prints `date +%N` as is, so there the clock is
+# whole seconds. `logread` is tried, not just found: without syslogd's shared-memory buffer it
+# exists and fails. `end` proves the output arrived whole.
 SCRIPT = (
     'p() { printf \'%s=%s\\n\' "$1" "$2"; }; '
     'p uid "$(id -u 2>/dev/null)"; '
@@ -15,12 +16,15 @@ SCRIPT = (
     "p groups \"$(id -Gn 2>/dev/null | tr ' ' ',')\"; "
     "if command -v journalctl >/dev/null 2>&1; then "
     'p systemd "$(journalctl --version 2>/dev/null'
-    " | sed -n '1s/^systemd \\([0-9][0-9]*\\).*/\\1/p')\"; fi; "
+    " | sed -n '1s/^systemd \\([0-9][0-9]*\\).*/\\1/p')\"; "
+    'p journal "$(journalctl -b -n 1 -o json --output-fields=_BOOT_ID 2>/dev/null'
+    ' || journalctl -b -n 1 -o json 2>/dev/null)"; fi; '
     "if command -v logread >/dev/null 2>&1 && logread >/dev/null 2>&1; then p logread 1; fi; "
     'for f in /var/log/messages /var/log/syslog; do [ -r "$f" ] && p file "$f"; done; '
     'p boot_id "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"; '
-    "p uptime \"$(cut -d' ' -f1 /proc/uptime 2>/dev/null)\"; "
     'p clock "$(date +%s 2>/dev/null)"; '
+    'p clock_ns "$(date +%s%N 2>/dev/null)"; '
+    "p uptime \"$(cut -d' ' -f1 /proc/uptime 2>/dev/null)\"; "
     "p end 1"
 )
 
@@ -38,7 +42,7 @@ TIMEOUT_S = 20.0
 
 @dataclass(frozen=True, slots=True)
 class Probe:
-    """One probe's answers, and the host time halfway through it."""
+    """One probe's answers, and the host time they arrived at."""
 
     uid: int | None
     user: str
@@ -47,10 +51,26 @@ class Probe:
     logread: bool
     files: tuple[str, ...]
     boot_id: str
+    # Counts time asleep, unlike the journal's monotonic clock.
     uptime_ns: int | None
     clock_s: int | None
+    clock_ns: int | None
+    # The boot's latest journal entry: its wall clock less its monotonic clock.
+    journal_gap_ns: int | None
     # When the answer arrived: the board read its clocks before then.
     host_ns: int
+
+    @property
+    def monotonic_ns(self) -> int | None:
+        """The board's monotonic clock when it answered, the clock journal entries carry: its wall
+        clock less the journal's gap, rounded down, and at most its uptime."""
+        clock = self.clock_ns
+        if clock is None and self.clock_s is not None:
+            clock = self.clock_s * 1_000_000_000
+        if clock is None or self.journal_gap_ns is None:
+            return None
+        monotonic = clock - self.journal_gap_ns
+        return monotonic if self.uptime_ns is None else min(monotonic, self.uptime_ns)
 
     @property
     def partial_journal(self) -> bool:
@@ -85,6 +105,7 @@ def parse(output: str, host_ns: int) -> Probe:
     if values.get("end") != "1":
         raise Truncated
     uptime = values.get("uptime", "")
+    clock_ns = values.get("clock_ns", "")
     return Probe(
         uid=int(values["uid"]) if values.get("uid", "").isdecimal() else None,
         user=values.get("user", ""),
@@ -95,8 +116,20 @@ def parse(output: str, host_ns: int) -> Probe:
         boot_id=values.get("boot_id", "").replace("-", ""),
         uptime_ns=_seconds_ns(uptime),
         clock_s=int(values["clock"]) if values.get("clock", "").isdecimal() else None,
+        clock_ns=int(clock_ns) if clock_ns.isdecimal() else None,
+        journal_gap_ns=_gap_ns(values.get("journal", "")),
         host_ns=host_ns,
     )
+
+
+def _gap_ns(entry: str) -> int | None:
+    try:
+        record = json.loads(entry)
+        realtime = int(record["__REALTIME_TIMESTAMP"])
+        monotonic = int(record["__MONOTONIC_TIMESTAMP"])
+    except (ValueError, TypeError, KeyError):
+        return None
+    return (realtime - monotonic) * 1000
 
 
 def _seconds_ns(text: str) -> int | None:
