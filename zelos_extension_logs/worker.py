@@ -569,7 +569,9 @@ class SourceWorker(threading.Thread):
         self.health.message = message
 
     def _failed(self, failure: remote.Failure) -> Outcome:
-        self._fail(failure.message, failure.lasting)
+        # A stop ends what was under way; what that says is no failure of the source.
+        if not self._stop_event.is_set():
+            self._fail(failure.message, failure.lasting)
         return "lasting" if failure.lasting else "retry"
 
     def _explain(self, stderr: str) -> remote.Failure:

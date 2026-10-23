@@ -1300,6 +1300,9 @@ def test_stopping_during_the_probe_is_no_error(
     rig.stop()
 
     assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
+    # The stop ended the probe: that is no failure of the board.
+    assert rig.notes() == []
+    assert rig.worker.health.message == ""
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="a POSIX shell script stands in for ssh")
