@@ -73,7 +73,6 @@ class SourceConfig:
     host_key_policy: Literal["auto", "strict"]
     ssh_options: tuple[str, ...]
     history: Literal["kept", "new"]
-    time_source: Literal["device", "arrival"]
     values: bool
     # Automatic reads none from the kernel's lines, which print settings and addresses.
     kernel_values: bool
@@ -155,7 +154,6 @@ def source(item: dict[str, Any]) -> SourceConfig:
         host_key_policy=advanced["host_key_policy"],
         ssh_options=tuple(shlex.split(advanced.get("ssh_options") or "")),
         history=advanced["history"],
-        time_source=advanced["time_source"],
         # The demo prints values to show them; it has no Advanced settings.
         values=connection == "demo" or (read != "system" if values == "auto" else values == "on"),
         kernel_values=connection == "demo" or values == "on",
