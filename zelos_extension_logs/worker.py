@@ -42,6 +42,8 @@ _POLL_S = 0.25
 _NO_PERMISSION = "insufficient permissions"
 # This computer's boot, for the kernel's lines a command run here prints.
 _BOOT_ID = Path("/proc/sys/kernel/random/boot_id")
+# What the probe says of a file that cannot be followed, as the local follower's error says it.
+_UNREADABLE = {"directory": "Is a directory", "unreadable": "Permission denied"}
 
 State = Literal["starting", "connecting", "streaming", "waiting", "ended", "stopped"]
 # How a session ended: try again soon, try again once a minute, or never (a command that finished).
@@ -282,7 +284,19 @@ class SourceWorker(threading.Thread):
                 self._note_restart(board)
             if self.cfg.read == "file":
                 assert self.cfg.path is not None
-                command, kind = probe.tail(self.cfg.path), "file"
+                if board is not None and board.path in _UNREADABLE:
+                    reason = _UNREADABLE[board.path]
+                    return self._failed(
+                        remote.Failure(f"Cannot read {self.cfg.path}: {reason}.", False)
+                    )
+                missing = board is not None and board.path == "missing"
+                if missing:
+                    self._fail(
+                        f"No file {self.cfg.path} yet. Its lines are read once it appears.", False
+                    )
+                # Every line of a file the probe found missing is new, also one written before tail
+                # starts.
+                command, kind = probe.tail(self.cfg.path, whole=missing), "file"
             else:
                 assert self.cfg.command is not None
                 command, kind = self.cfg.command, "command"
@@ -297,8 +311,9 @@ class SourceWorker(threading.Thread):
         drain = threading.Thread(target=said.extend, args=(process.stderr or (),), daemon=True)
         drain.start()
         # A quiet log prints nothing until its next line; the probe, or a local start, proved the
-        # way there.
-        self._connected()
+        # way there, unless the file is still to appear.
+        if board is None or board.path != "missing":
+            self._connected()
         if kind == "journal":
             streamed = self._follow_journal(self._chunks(process), board, resumes_at)
         else:
@@ -387,7 +402,9 @@ class SourceWorker(threading.Thread):
                 held.close()
 
     def _probe(self) -> probe.Probe | remote.Failure:
-        process = self._start(probe.SCRIPT, wrapped=False)
+        process = self._start(
+            probe.script(self.cfg.path if self.cfg.read == "file" else None), wrapped=False
+        )
         if isinstance(process, remote.Failure):
             return process
         try:

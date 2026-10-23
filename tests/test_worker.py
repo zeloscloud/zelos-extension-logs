@@ -54,6 +54,7 @@ def probe_output(
     boot: str = "f07dd35d-996b-4983-98f1-e4347c93e456",
     uptime: str = "500.00",
     clock: int = CLOCK_S,
+    path: str | None = None,
     kernel_lag_s: float | None = None,
     dmesg: str | None = None,
     end: bool = True,
@@ -86,6 +87,8 @@ def probe_output(
         )
     if dmesg is not None:
         lines.append(f"dmesg={dmesg}")
+    if path is not None:
+        lines.append(f"path={path}")
     if end:
         lines.append("end=1")
     return "\n".join(lines) + "\n"
@@ -1666,7 +1669,7 @@ class TestText:
         )
         rig.run_until(lambda: rig.worker.health.lines == 1)
 
-        assert rig.processes.command(1) == "tail -n 0 -F /var/log/acme/run.log"
+        assert rig.processes.command(1) == "tail -n 0 -F /var/log/acme/run.log 2>/dev/null"
         assert rig.processes.argvs[1][-1] == remote.wrap(rig.processes.command(1))
         assert rig.worker.health.reading == "file"
         assert [r["message"] for r in rig.programs()] == ["started"]
@@ -1680,7 +1683,7 @@ class TestText:
 
         rig.run_until("waiting")
 
-        assert rig.processes.command(1) == "tail -n 0 -F '/var/log/my app.log'"
+        assert rig.processes.command(1) == "tail -n 0 -F '/var/log/my app.log' 2>/dev/null"
 
     def test_a_quiet_file_over_ssh_is_streaming_once_the_probe_passes(
         self, make: Callable[..., Rig]
@@ -1777,7 +1780,7 @@ class TestText:
 
         rig.run_until("waiting")
 
-        assert rig.processes.command(1) == "tail -n 0 -F /var/log/messages"
+        assert rig.processes.command(1) == "tail -n 0 -F /var/log/messages 2>/dev/null"
         assert [r["level"] for r in rig.programs()] == ["error"]
 
     def test_a_local_system_log_is_not_wrapped(
@@ -2237,6 +2240,61 @@ class TestReplay:
 
 def kernel(uptime_s: float, text: str) -> str:
     return f"[{uptime_s:12.6f}] {text}\n"
+
+
+class TestFileOverSsh:
+    def test_the_probe_asks_about_the_file(self, make: Callable[..., Rig]) -> None:
+        rig = make(source(read="file", path="/x"), FakeProcess(probe_output(path="ok")))
+
+        rig.run_until("waiting")
+
+        assert rig.processes.command(0) == probe.script("/x")
+
+    def test_a_file_not_there_yet_is_noted_and_followed_once_it_appears(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        tail = FakeProcess(hold_open=True)
+        rig = make(source(read="file", path="/x"), FakeProcess(probe_output(path="missing")), tail)
+        rig.start()
+        try:
+            wait_until(lambda: len(rig.processes.started) == 2)
+            assert rig.worker.health.state == "connecting"
+            assert (
+                rig.worker.health.message == "No file /x yet. Its lines are read once it appears."
+            )
+            tail.send(b"appeared\n")
+            rig.wait_for("streaming")
+        finally:
+            rig.stop()
+
+        assert rig.notes() == [
+            ("warn", "[logs] No file /x yet. Its lines are read once it appears.")
+        ]
+        assert [r["message"] for r in rig.programs()] == ["appeared"]
+        # It can appear before tail starts: all of it is new.
+        assert rig.processes.command(1) == "tail -n +1 -F /x 2>/dev/null"
+
+    def test_a_file_that_is_there_is_followed_from_its_next_line(
+        self, make: Callable[..., Rig]
+    ) -> None:
+        rig = make(source(read="file", path="/x"), FakeProcess(probe_output(path="ok")))
+
+        rig.run_until("waiting")
+
+        assert rig.processes.command(1) == "tail -n 0 -F /x 2>/dev/null"
+
+    @pytest.mark.parametrize(
+        ("state", "reason"), [("unreadable", "Permission denied"), ("directory", "Is a directory")]
+    )
+    def test_a_file_it_cannot_read_is_reported_and_tried_again(
+        self, make: Callable[..., Rig], state: str, reason: str
+    ) -> None:
+        rig = make(source(read="file", path="/x"), FakeProcess(probe_output(path=state)))
+
+        rig.run_until("waiting")
+
+        assert len(rig.processes.started) == 1
+        assert rig.notes() == [("warn", f"[logs] Cannot read /x: {reason}.")]
 
 
 class TestSavedPlace:

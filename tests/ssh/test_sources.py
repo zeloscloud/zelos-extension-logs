@@ -5,7 +5,7 @@ import uuid
 from collections.abc import Callable
 
 import pytest
-from harness import LOOPBACK, WAIT_S, Board, Boards, Run, numbers
+from harness import LOOPBACK, WAIT_S, Board, Boards, Run, notes, numbers
 
 from tests.conftest import run as run_action
 
@@ -46,7 +46,29 @@ def test_a_followed_file_survives_rotation_by_rename_and_truncate(
     append(*(f"n={i} {tok}" for i in range(10, 15)))
     run.wait_lines([f"n=14 {tok}"])
 
-    assert sorted(numbers(run.rows(), tok, program=None)) == list(range(15))
+    rows = run.rows()
+    assert sorted(numbers(rows, tok, program=None)) == list(range(15))
+    # tail says when the file was replaced or truncated; those words are not the file's.
+    assert [r["message"] for r in rows if r["message"].startswith("tail:")] == []
+
+
+@pytest.mark.parametrize("name", ["systemd-openssh", "busybox-dropbear"])
+def test_a_file_not_there_yet_is_noted_then_followed_once_it_appears(
+    boards: Boards, agent: Callable[..., Run], name: str
+) -> None:
+    board = boards.get(name)
+    tok = uuid.uuid4().hex[:8]
+    path = f"/tmp/acme-{tok}.log"
+    note = f"No file {path} yet. Its lines are read once it appears."
+
+    run = agent([board.source(top={"read": "file", "path": path})])
+    run.wait("the note", lambda: run.worker().health.message == note)
+    board.sh(f'echo "n=0 {tok}" >> {path}')
+    run.wait_lines([f"n=0 {tok}"])
+
+    rows = run.rows()
+    assert numbers(rows, tok, program=None) == [0]
+    assert [r["message"] for r in notes(rows)] == [f"[logs] {note}"]
 
 
 def test_a_command_places_its_lines_by_the_device_uptime(
