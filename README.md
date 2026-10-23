@@ -2,12 +2,13 @@
 
 Record the logs of your Linux boards in Zelos, on the same timeline as everything else you measure: the journal or syslog over SSH, any log file, or the output of any command.
 
-- 🔌 **Just a host name**: Logs connects with your own `ssh` and its config, asks the board what it keeps, and follows it.
-- 🧭 **The right level**: a service's `[warning]` is a warning, even though the journal stores all of a service's output as info.
-- 🔎 **Every line, searchable**: each row keeps its level, the program that printed it and its message, and printed values can become signals.
-- ⏱️ **The board's clock**: rows are placed by the board's own clock, so a board that boots at 1970 still lines up with your other data.
-- 🔁 **Picks up where it stopped**: after a dropped connection, a reboot or a restart, the journal resumes where Logs left off.
-- 🗂️ **Saved logs too**: convert a log file, plain or compressed, to a Zelos trace, or replay it at the pace it was printed.
+- 🔌 **Just a host name**: if `ssh` reaches the board, so does Logs. Nothing to install.
+- ⏱️ **The board's clock**: rows line up with your data, even if it reads 1970.
+- 🧭 **The right level**: a service's `[warning]` is a warning, not the journal's info.
+- 🔎 **Every line, searchable**: by level, by program and by message.
+- 📈 **Values as signals**: `rpm=1450` in a line can plot as `rpm`.
+- 🔁 **Picks up where it stopped**: the journal resumes after a drop or a reboot.
+- 🗂️ **Any log**: a file, a command's output, or a saved log to convert or replay.
 
 [![Auto-configure adds the demo board and Save & Start runs it. Its log, dragged onto the layout, fills a Log panel line by line, a warning and an error among them, and the pump's rpm, dragged below, plots live.](assets/readme/quickstart.avif)](assets/readme/quickstart.mp4)
 
