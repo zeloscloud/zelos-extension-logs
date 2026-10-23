@@ -18,10 +18,13 @@ SCRIPT = (
     'p systemd "$(journalctl --version 2>/dev/null'
     " | sed -n '1s/^systemd \\([0-9][0-9]*\\).*/\\1/p')\"; "
     'p journal "$(journalctl -b -n 1 -o json --output-fields=_BOOT_ID 2>/dev/null'
-    ' || journalctl -b -n 1 -o json 2>/dev/null)"; fi; '
+    ' || journalctl -b -n 1 -o json 2>/dev/null)"; '
+    'p kernel "$(journalctl -k -b -n 1 -o json --output-fields=_SOURCE_MONOTONIC_TIMESTAMP'
+    ' 2>/dev/null)"; fi; '
     "if command -v logread >/dev/null 2>&1 && logread >/dev/null 2>&1; then p logread 1; fi; "
     'for f in /var/log/messages /var/log/syslog; do [ -r "$f" ] && p file "$f"; done; '
     'p boot_id "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"; '
+    'p dmesg "$(dmesg 2>/dev/null | head -n 1)"; '
     'p clock "$(date +%s 2>/dev/null)"; '
     'p clock_ns "$(date +%s%N 2>/dev/null)"; '
     "p uptime \"$(cut -d' ' -f1 /proc/uptime 2>/dev/null)\"; "
@@ -38,6 +41,9 @@ _FIELDS = (
 HISTORY = timedelta(hours=1)
 # The probe's whole run, its connect included.
 TIMEOUT_S = 20.0
+# journald imports the kernel's buffer when it starts at boot, stamping those entries late; an entry
+# the kernel stamped later than this reached it as it was printed.
+_LIVE_KERNEL_NS = 60_000_000_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +65,12 @@ class Probe:
     journal_gap_ns: int | None
     # When the answer arrived: the board read its clocks before then.
     host_ns: int
+    # How far the kernel's own clock, which stamps its lines, ran behind the monotonic clock when
+    # it printed its latest line: it is not corrected by NTP, so it drifts.
+    kernel_lag_ns: int | None = None
+    # The oldest line in the kernel's buffer, as dmesg prints it first: a command whose first
+    # stamped line is this one prints this kernel's lines.
+    kernel_oldest: str = ""
 
     @property
     def monotonic_ns(self) -> int | None:
@@ -71,6 +83,15 @@ class Probe:
             return None
         monotonic = clock - self.journal_gap_ns
         return monotonic if self.uptime_ns is None else min(monotonic, self.uptime_ns)
+
+    @property
+    def kernel_ns(self) -> int | None:
+        """The kernel's clock when the board answered, the clock dmesg's lines carry: the
+        monotonic clock less the kernel's lag where the journal measured it, else the uptime."""
+        monotonic = self.monotonic_ns
+        if monotonic is None:
+            return self.uptime_ns
+        return monotonic if self.kernel_lag_ns is None else monotonic - self.kernel_lag_ns
 
     @property
     def partial_journal(self) -> bool:
@@ -118,6 +139,8 @@ def parse(output: str, host_ns: int) -> Probe:
         clock_s=int(values["clock"]) if values.get("clock", "").isdecimal() else None,
         clock_ns=int(clock_ns) if clock_ns.isdecimal() else None,
         journal_gap_ns=_gap_ns(values.get("journal", "")),
+        kernel_lag_ns=_lag_ns(values.get("kernel", "")),
+        kernel_oldest=values.get("dmesg", ""),
         host_ns=host_ns,
     )
 
@@ -130,6 +153,16 @@ def _gap_ns(entry: str) -> int | None:
     except (ValueError, TypeError, KeyError):
         return None
     return (realtime - monotonic) * 1000
+
+
+def _lag_ns(entry: str) -> int | None:
+    try:
+        record = json.loads(entry)
+        received = int(record["__MONOTONIC_TIMESTAMP"]) * 1000
+        stamped = int(record["_SOURCE_MONOTONIC_TIMESTAMP"]) * 1000
+    except (ValueError, TypeError, KeyError):
+        return None
+    return received - stamped if stamped > _LIVE_KERNEL_NS else None
 
 
 def _seconds_ns(text: str) -> int | None:

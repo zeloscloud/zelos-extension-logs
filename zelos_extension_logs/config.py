@@ -83,6 +83,8 @@ class SourceConfig:
     history: Literal["kept", "new"]
     time_source: Literal["device", "arrival"]
     values: bool
+    # Automatic reads none from the kernel's lines, which print settings and addresses.
+    kernel_values: bool
     # What a replayed file's stamps leave out; None for every other read.
     timing: Timing | None
 
@@ -166,6 +168,7 @@ def source(item: dict[str, Any]) -> SourceConfig:
         time_source=advanced["time_source"],
         # The demo prints values to show them; it has no Advanced settings.
         values=connection == "demo" or (read != "system" if values == "auto" else values == "on"),
+        kernel_values=connection == "demo" or values == "on",
         # A replay starts now, so a start is moot; the year comes from the file's last change.
         timing=Timing(zone(advanced.get("time_zone"))) if read == "replay" else None,
     )
