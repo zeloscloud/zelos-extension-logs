@@ -215,7 +215,7 @@ class FakeProcess:
 
 _WRAP_HEAD = "trap ended USR1; { "
 _WRAP_TAIL = "; s=$?; kill -USR1 $$ 2>/dev/null; exit $s; } & while read -r _; do :; done"
-_MERGED_HEAD, _MERGED_TAIL = "( ", "\n) 2>&1"
+_MERGED_HEAD, _MERGED_TAIL = "( eval ", " ) 2>&1"
 
 
 def unwrap(text: str) -> str:
@@ -224,7 +224,8 @@ def unwrap(text: str) -> str:
         session = shlex.split(text)[0].removeprefix("c=").removesuffix(";")
         text = session.split(_WRAP_HEAD, 1)[1].removesuffix(_WRAP_TAIL)
     if text.startswith(_MERGED_HEAD) and text.endswith(_MERGED_TAIL):
-        return text.removeprefix(_MERGED_HEAD).removesuffix(_MERGED_TAIL)
+        (command,) = shlex.split(text.removeprefix(_MERGED_HEAD).removesuffix(_MERGED_TAIL))
+        return command
     return text
 
 
