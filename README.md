@@ -22,12 +22,6 @@ Record the logs of your Linux boards in Zelos, on the same timeline as everythin
 
 Logs runs on Linux, macOS and Windows, with Zelos 26.0.9 or later.
 
-## How it works
-
-![Zelos with Logs on this computer reaches a Linux board with your own ssh. The board's own log tools, journalctl, logread or tail -F, send back each line as it is written, and nothing is installed on the board.](assets/readme/how-it-works.svg)
-
-Logs starts the board's own log reader over your `ssh` and records each line as it arrives, placed by the board's clock. The reader stops when the connection ends.
-
 ## Get started
 
 1. Install **Logs** from Extensions and open its settings.
