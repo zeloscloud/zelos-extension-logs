@@ -51,8 +51,11 @@ class Placement:
     An entry from an earlier boot, which a resume can bring, has no live mapping: it takes its
     wall-clock stamp, shifted by how far the board's clock was from this computer's at the probe.
 
-    A boot's wall clock less its monotonic clock changes only when the board suspends or its wall
-    clock steps. When it grows, the monotonic clock fell behind, and the boot's mapping starts over.
+    The probe's reading of the monotonic clock places history by its distance from now. The
+    monotonic clock stops while the board sleeps, so history written before a sleep lands that much
+    late, never early. A boot's wall clock less its monotonic clock changes only when the board
+    sleeps or its wall clock steps. When it grows, the monotonic clock fell behind and the boot's
+    mapping starts over, seeded again unless the jump came after the probe.
     """
 
     def __init__(self, probe: Probe | None) -> None:
@@ -65,19 +68,28 @@ class Placement:
         if clock is None:
             if entry.monotonic_ns is None or not self._live(entry.boot_id):
                 return self._wall_clock(entry, host_ns)
-            clock = self._start(entry.boot_id)
+            clock = self._start(entry.boot_id, seeded=True)
         if entry.monotonic_ns is None:
             return host_ns
         if self._fell_behind(entry):
-            clock = self._start(entry.boot_id)
+            clock = self._start(entry.boot_id, seeded=not self._after_probe(entry))
         return clock.map(host_ns, entry.monotonic_ns)[0]
 
-    def _start(self, boot_id: str) -> DeviceClock:
+    def _start(self, boot_id: str, *, seeded: bool) -> DeviceClock:
         clock = self._clocks[boot_id] = DeviceClock(drift_ppm=_DRIFT_PPM)
         probe = self._probe
-        if probe is not None and probe.boot_id == boot_id and probe.uptime_ns:
-            clock.seed(probe.host_ns, probe.uptime_ns)
+        if seeded and probe is not None and probe.boot_id == boot_id:
+            monotonic = probe.monotonic_ns
+            if monotonic is not None:
+                clock.seed(probe.host_ns, monotonic)
         return clock
+
+    def _after_probe(self, entry: Entry) -> bool:
+        probe = self._probe
+        if probe is None or probe.journal_gap_ns is None or entry.realtime_ns is None:
+            return True
+        assert entry.monotonic_ns is not None
+        return entry.realtime_ns - entry.monotonic_ns > probe.journal_gap_ns + _SAME_GAP_NS
 
     def _fell_behind(self, entry: Entry) -> bool:
         if entry.realtime_ns is None or entry.monotonic_ns is None:

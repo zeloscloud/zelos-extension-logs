@@ -62,7 +62,20 @@ def probe_output(
     if logread:
         lines.append("logread=1")
     lines += [f"file={name}" for name in files]
-    lines += [f"boot_id={boot}", f"uptime={uptime}", f"clock={clock}"]
+    # A board that never slept: its journal's clocks agree with its uptime.
+    monotonic_us = round(float(uptime) * 1e6) if uptime.replace(".", "", 1).isdecimal() else None
+    entry = (
+        json.dumps(
+            {
+                "__REALTIME_TIMESTAMP": str(clock * 1_000_000),
+                "__MONOTONIC_TIMESTAMP": str(monotonic_us),
+            }
+        )
+        if monotonic_us is not None
+        else ""
+    )
+    lines += [f"boot_id={boot}", f"journal={entry}", f"clock={clock}", f"clock_ns={clock * S}"]
+    lines.append(f"uptime={uptime}")
     if end:
         lines.append("end=1")
     return "\n".join(lines) + "\n"

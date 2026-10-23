@@ -429,7 +429,9 @@ class FakeAgent:
 
 PROBE = (
     "uid=0\nuser=root\ngroups=root\nsystemd=252\n"
-    "boot_id=f07dd35d-996b-4983-98f1-e4347c93e456\nuptime=500.00\nclock=1700000000\nend=1\n"
+    "boot_id=f07dd35d-996b-4983-98f1-e4347c93e456\n"
+    'journal={"__REALTIME_TIMESTAMP":"1700000000000000","__MONOTONIC_TIMESTAMP":"500000000"}\n'
+    "clock=1700000000\nclock_ns=1700000000000000000\nuptime=500.00\nend=1\n"
 )
 
 

@@ -18,6 +18,7 @@ from hypothesis import strategies as st
 from zelos_extension_logs import probe
 from zelos_extension_logs.probe import NoLog, Probe, Truncated, system_log
 
+S = 1_000_000_000
 BOOT = "f07dd35d-996b-4983-98f1-e4347c93e456"
 CURSOR = "s=042b6c2a969345428890518ac13848bc;i=9fd;b=f07dd35d996b498398f1e4347c93e456;m=125371c1"
 
@@ -27,8 +28,10 @@ user=root
 groups=root
 systemd=252
 boot_id={BOOT}
-uptime=795.61
+journal={{"__CURSOR":"{CURSOR}","__REALTIME_TIMESTAMP":"1792606744000000","__MONOTONIC_TIMESTAMP":"795100000"}}
 clock=1792606744
+clock_ns=1792606744512000000
+uptime=795.61
 end=1
 """
 
@@ -51,8 +54,9 @@ systemd=
 logread=1
 file=/var/log/messages
 boot_id={BOOT}
-uptime=796.08
 clock=1792606745
+clock_ns=1792606745%N
+uptime=796.08
 end=1
 """
 
@@ -68,9 +72,51 @@ def make(**changes: Any) -> Probe:
         "boot_id": "f07dd35d996b498398f1e4347c93e456",
         "uptime_ns": 795_610_000_000,
         "clock_s": 1_700_000_000,
+        "clock_ns": None,
+        "journal_gap_ns": None,
         "host_ns": 1_700_000_000_000_000_000,
     }
     return Probe(**{**fields, **changes})
+
+
+class TestMonotonic:
+    """The board's monotonic clock, the one journal entries carry, when the probe answered."""
+
+    CLOCK_NS = 1_792_606_744_512_000_000
+
+    def test_its_wall_clock_less_the_journals_gap(self) -> None:
+        # Asleep for 400 s since boot: the uptime counts that, the monotonic clock does not.
+        board = make(
+            clock_ns=self.CLOCK_NS, journal_gap_ns=self.CLOCK_NS - 500 * S, uptime_ns=900 * S
+        )
+
+        assert board.monotonic_ns == 500 * S
+
+    def test_never_more_than_the_uptime(self) -> None:
+        # The wall clock stepped forward after the journal's latest entry.
+        board = make(
+            clock_ns=self.CLOCK_NS, journal_gap_ns=self.CLOCK_NS - 600 * S, uptime_ns=500 * S
+        )
+
+        assert board.monotonic_ns == 500 * S
+
+    def test_whole_seconds_round_it_down_where_date_has_no_nanoseconds(self) -> None:
+        board = make(
+            clock_s=1_792_606_744,
+            clock_ns=None,
+            journal_gap_ns=1_792_606_744_250_000_000 - 500 * S,
+            uptime_ns=None,
+        )
+
+        assert board.monotonic_ns == 500 * S - 250_000_000
+
+    def test_unknown_without_the_journals_clocks(self) -> None:
+        assert make(clock_ns=self.CLOCK_NS, journal_gap_ns=None).monotonic_ns is None
+
+    def test_an_entry_that_is_not_json_has_no_gap(self) -> None:
+        board = probe.parse(ROOT_SYSTEMD.replace("journal={", "journal=x{"), 0)
+
+        assert board.journal_gap_ns is None
 
 
 class TestParse:
@@ -87,6 +133,8 @@ class TestParse:
             boot_id="f07dd35d996b498398f1e4347c93e456",
             uptime_ns=795_610_000_000,
             clock_s=1792606744,
+            clock_ns=1792606744_512_000_000,
+            journal_gap_ns=(1792606744_000_000 - 795_100_000) * 1000,
             host_ns=42,
         )
         assert not board.partial_journal
@@ -111,6 +159,9 @@ class TestParse:
         assert board.files == ("/var/log/messages",)
         assert board.uptime_ns == 796_080_000_000
         assert board.clock_s == 1792606745
+        # BusyBox prints `date +%N` as is.
+        assert board.clock_ns is None
+        assert board.journal_gap_ns is None
         assert "adm" in board.groups
 
     def test_a_clock_with_an_empty_fraction_is_not_misread(self) -> None:
@@ -150,12 +201,16 @@ class TestParse:
             probe.parse("uid=0\nend=0\n", 0)
 
     def test_an_empty_answer_is_unknown_not_zero(self) -> None:
-        board = probe.parse("uid=\nuser=\ngroups=\nsystemd=\nuptime=\nclock=\nend=1\n", 0)
+        board = probe.parse(
+            "uid=\nuser=\ngroups=\nsystemd=\njournal=\nclock=\nclock_ns=\nuptime=\nend=1\n", 0
+        )
 
         assert board.uid is None
         assert board.systemd is None
         assert board.uptime_ns is None
         assert board.clock_s is None
+        assert board.clock_ns is None
+        assert board.journal_gap_ns is None
         assert board.groups == frozenset()
         assert board.boot_id == ""
 
