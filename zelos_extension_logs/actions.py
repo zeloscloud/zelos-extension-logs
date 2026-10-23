@@ -356,11 +356,14 @@ def run_command(
         failure = remote.explain(done.stderr.decode("utf-8", "replace"), cfg.host or "")
         return {"status": "error", "message": failure.message}
     output = done.stdout.decode("utf-8", "replace").splitlines()
+    if done.cut:
+        # The first line kept is the end of a longer one.
+        output = output[1:]
     return {
         "status": "success",
         "exit_code": done.returncode,
         "output": output[-_MAX_OUTPUT_LINES:],
-        "truncated": len(output) > _MAX_OUTPUT_LINES,
+        "truncated": done.cut or len(output) > _MAX_OUTPUT_LINES,
     }
 
 
