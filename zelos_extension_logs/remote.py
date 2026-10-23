@@ -22,7 +22,7 @@ _WAKE_S = 0.5
 # What `run` keeps of each stream it reads; Run Command shows at most 2,000 lines of it.
 _KEEP_BYTES = 1 << 20
 # The keys ssh offers when nothing names one. Naming the access key with -i stops ssh from offering
-# these by itself, so they are named too.
+# these by itself, so they are named too, all but security keys: those wait for a touch.
 _DEFAULT_KEYS = ("id_ed25519", "id_ecdsa", "id_rsa")
 
 
