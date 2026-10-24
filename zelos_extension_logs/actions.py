@@ -63,6 +63,7 @@ _source = action.input(
     timeout=_STANDALONE_TIMEOUT_S,
     standalone=True,
     read_only=True,
+    hidden=True,
 )
 def list_hosts() -> dict[str, Any]:
     hosts = sshconfig.hosts(Path.home() / ".ssh" / "config")
@@ -82,6 +83,7 @@ def list_hosts() -> dict[str, Any]:
     timeout=_STANDALONE_TIMEOUT_S,
     standalone=True,
     read_only=True,
+    hidden=True,
 )
 @action.object("config", title="Configuration", properties={}, required=False)
 def auto_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -372,6 +374,7 @@ def run_command(
     "State, health and counters of a source.",
     timeout=_TIMEOUT_S,
     read_only=True,
+    hidden=True,
 )
 @_source
 def get_state(source: str | None = None) -> dict[str, Any]:
@@ -386,6 +389,7 @@ def get_state(source: str | None = None) -> dict[str, Any]:
     "The last lines a source recorded, as messages.",
     timeout=_TIMEOUT_S,
     read_only=True,
+    hidden=True,
 )
 @_source
 @action.integer("lines", title="Lines", minimum=1, maximum=_MAX_LINES, required=False, default=50)

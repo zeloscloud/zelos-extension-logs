@@ -871,27 +871,35 @@ def test_the_source_field_defaults_to_the_first_source(
 
 
 def test_which_actions_run_without_the_extension() -> None:
+    standalone = {name for name, function in _registered().items() if function._action.standalone}
+
+    assert standalone == {
+        "list_hosts",
+        "auto_config",
+        "test_connection",
+        "show_access_key",
+        "convert_log_file",
+    }
+
+
+def test_every_action_has_its_flags_decided() -> None:
+    """Pins each action's flags, so a new action or a changed flag is a deliberate choice."""
     flags = {
-        name: (getattr(actions, name)._action.standalone, getattr(actions, name)._action.read_only)
-        for name in (
-            "list_hosts",
-            "auto_config",
-            "test_connection",
-            "show_access_key",
-            "convert_log_file",
-            "run_command",
-            "get_state",
-            "sample",
-        )
+        name: (function._action.read_only, function._action.hidden)
+        for name, function in _registered().items()
     }
 
     assert flags == {
         "list_hosts": (True, True),
         "auto_config": (True, True),
-        "test_connection": (True, False),
-        "show_access_key": (True, False),
-        "convert_log_file": (True, False),
+        "test_connection": (False, False),
+        "show_access_key": (False, False),
+        "convert_log_file": (False, False),
         "run_command": (False, False),
-        "get_state": (False, True),
-        "sample": (False, True),
+        "get_state": (True, True),
+        "sample": (True, True),
     }
+
+
+def _registered() -> dict[str, Any]:
+    return {name: obj for name, obj in vars(actions).items() if hasattr(obj, "_action")}
