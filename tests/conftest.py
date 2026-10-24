@@ -55,14 +55,15 @@ def read_events(path: Path) -> dict[str, list[dict[str, Any]]]:
             for event in source.events:
                 fields = [field.path for field in event.fields]
                 data = reader.query(segments, fields, *ALL_TIME).to_arrow()
-                # Fields are named `<source>/<event>.<field>`, the time `time_s`; an event with no
-                # rows returns b"".
+                # Fields are named `<source>/<event>.<field>`, the time `time_s` beside `time_ns`;
+                # an event with no rows returns b"".
                 prefix = f"{source.name}/{event.name}."
                 rows = pa.ipc.open_stream(data).read_all().to_pylist() if data else []
                 events[event.name] = [
                     {
                         key.removeprefix(prefix) if key.startswith(prefix) else TIME: value
                         for key, value in row.items()
+                        if key != "time_ns"
                     }
                     for row in rows
                 ]
