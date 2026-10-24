@@ -43,7 +43,6 @@ Actions show up under **Logs** in the sidebar's **Actions**. Double-click one to
 - **Test Connection** connects to a device and says what it will read, or what to fix.
 - **Show Access Key** gives the line that lets this computer into a device.
 - **Run Command** runs a shell command where a source reads, on its device or this computer, and returns its output.
-- **Sample** returns a source's last lines, and **Get State** its counters and health.
 - **Convert Log File** converts a saved log to a Zelos trace (`.trz`), even while Logs is stopped.
 
 ## When something is wrong

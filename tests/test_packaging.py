@@ -18,13 +18,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = tomllib.loads((REPO_ROOT / "extension.toml").read_text(encoding="utf-8"))
 PYPROJECT = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 SCHEMA = json.loads((REPO_ROOT / MANIFEST["config"]["schema"]).read_text(encoding="utf-8"))
-# The actions the agent serves while the extension is stopped, and whether each is read-only.
+# The actions the agent serves while the extension is stopped, with their (read_only, hidden).
 STANDALONE = {
-    "list_hosts": True,
-    "auto_config": True,
-    "test_connection": False,
-    "show_access_key": False,
-    "convert_log_file": False,
+    "list_hosts": (True, True),
+    "auto_config": (True, True),
+    "test_connection": (False, False),
+    "show_access_key": (False, False),
+    "convert_log_file": (False, False),
 }
 
 
@@ -197,7 +197,7 @@ def test_inventory_holds_the_standalone_actions(tmp_path: Path) -> None:
 
     inventory = json.loads(out.read_text(encoding="utf-8"))
     assert inventory["action_prefix"] == ACTION_PREFIX
-    assert {a["path"]: a["read_only"] for a in inventory["actions"]} == STANDALONE
+    assert {a["path"]: (a["read_only"], a["hidden"]) for a in inventory["actions"]} == STANDALONE
 
 
 def test_importing_every_module_starts_nothing() -> None:
