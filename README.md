@@ -21,7 +21,7 @@ Record logs in Zelos, on the same timeline as everything else you measure: a dev
 | **Saved logs** | Plain, gzip, bzip2, xz or zstd log files, converted to Zelos traces |
 | **Log formats** | The journal, syslog, the Linux kernel, Android logcat, and common logging libraries for C and C++, Rust, Go, Python and Java. [zelos-log-lines](https://pypi.org/project/zelos-log-lines/) lists every format. |
 
-Logs runs on Linux, macOS and Windows, with Zelos 26.0.9 or later.
+Logs runs on Linux, macOS and Windows, with Zelos 26.0.10 or later.
 
 ## Get started
 

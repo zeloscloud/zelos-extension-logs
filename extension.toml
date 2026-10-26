@@ -3,36 +3,26 @@ version = "0.1.1"
 description = "Record logs in Zelos on the same timeline as your data: a device's system log over SSH, this computer's system log, any log file, or any command's output. Convert saved logs to Zelos traces."
 author = "Zelos"
 repository = "https://github.com/zeloscloud/zelos-extension-logs"
-homepage = "https://github.com/zeloscloud/zelos-extension-logs"
-# The app's search and its AI read these, with the name and description; the page shows the first
-# three categories.
+# At most 20 keywords and 10 categories. Marketplace search matches both, the name, description,
+# author and repository. Zelos AI sees the name, description and keywords, not the categories.
 keywords = ["journalctl", "systemd", "rsyslog", "embedded linux", "yocto", "buildroot", "raspberry pi", "busybox", "openwrt", "logread", "dmesg", "kernel", "logcat", "android", "docker", "macos", "windows", "remote", "device logs", "log viewer"]
 categories = ["Embedded", "Diagnostics", "Monitoring", "IoT"]
-
 icon = "assets/icon.png"
 readme = "README.md"
 
-# From 26.0.9 an update keeps the extension's data directory, which holds the journal positions
-# and the access key.
 [zelos]
-version = ">=26.0.9"
+version = ">=26.0.10"
 
 [config]
 schema = "config.schema.json"
 
-[host]
-type = "agent"
-
-[host.agent]
+[agent]
+runtime = "python"
 entry = "main.py"
 python_version = "3.11"
 
-# Linux and macOS: SIGTERM, then SIGKILL after this many seconds. Every source stops within 1 s, all
-# at once, and the app flushes after; the rest is headroom for the SDK's atexit drain.
-[host.agent.stop]
+[agent.stop]
 grace_seconds = 5
 
 [package]
-# docs and assets/readme: an installed copy opens the README's reference and pictures from the
-# package, not from GitHub.
-paths = ["main.py", "zelos_extension_logs", "docs", "LICENSE", "assets/readme"]
+paths = ["LICENSE", "main.py", "zelos_extension_logs", "docs", "assets/readme"]

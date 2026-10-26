@@ -150,7 +150,6 @@ class FakeProcess:
         self._queue: queue.Queue[bytes | None] = queue.Queue()
         self.returncode: int | None = None if hold_open else returncode
         self.stdin = _Stdin(self.end)
-        self.communicated = False
         read_fd, self._write_fd = os.pipe()
         self.stdout = os.fdopen(read_fd, "rb", buffering=0)
         self.stderr = io.BytesIO(self._stderr)
@@ -188,7 +187,6 @@ class FakeProcess:
     ) -> tuple[bytes, bytes]:
         if self._hangs:
             raise subprocess.TimeoutExpired("fake", timeout or 0)
-        self.communicated = True
         self.end()
         return self._stdout, self._stderr
 
@@ -234,7 +232,7 @@ class Processes:
     """The worker's `run=` hook: hands out one scripted process per call, in order.
 
     The first call over ssh is the probe. A call past the script raises
-    OSError, which a worker reports as a failure to start, and is recorded in `unscripted`.
+    OSError, which a worker reports as a failure to start.
     """
 
     def __init__(self, *scripted: FakeProcess) -> None:
@@ -242,13 +240,11 @@ class Processes:
         self.started: list[FakeProcess] = []
         self.argvs: list[list[str] | str] = []
         self.stderrs: list[int] = []
-        self.unscripted = 0
 
     def __call__(self, argv: list[str] | str, stdin: int, stderr: int) -> subprocess.Popen[bytes]:
         self.argvs.append(argv)
         self.stderrs.append(stderr)
         if not self._queue:
-            self.unscripted += 1
             raise OSError("no more scripted processes")
         process = self._queue.pop(0)
         self.started.append(process)
