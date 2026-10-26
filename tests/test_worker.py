@@ -846,7 +846,8 @@ class TestResume:
             wait_until(lambda: rig.cursors_file.exists())
             rig.clock.advance(6)
             stream.send(entry(CURSOR_2, 410, "b"))
-            wait_until(lambda: rig.saved()[KEY]["cursor"] == CURSOR_2)
+            # Through the worker's lock: on Windows a read open during the save fails its replace.
+            wait_until(lambda: (rig.cursors.get(KEY) or {}).get("cursor") == CURSOR_2)
         finally:
             rig.stop()
 
