@@ -44,7 +44,6 @@ class TestSshArgv:
             *("-o", "StrictHostKeyChecking=no"),
             *("-o", f"UserKnownHostsFile={NULL}"),
             *("-o", f"GlobalKnownHostsFile={NULL}"),
-            *("-o", "LogLevel=ERROR"),
             "--",
             "root@bench-1",
             "journalctl -f",
@@ -63,7 +62,6 @@ class TestSshArgv:
         )
         assert not any(word.startswith("UserKnownHostsFile") for word in argv)
         assert "StrictHostKeyChecking=no" not in argv
-        assert "LogLevel=ERROR" not in argv
 
     def test_the_port(self, ssh: str, home: Path) -> None:
         argv = ssh_argv(cfg(ssh_port=2222), "ls", None)
@@ -137,20 +135,24 @@ class TestSshArgv:
         start = argv.index("ControlMaster=no") - 1
         assert argv[start : start + 4] == ["-o", "ControlMaster=no", "-o", "ControlPath=none"]
 
-    def test_windows_keeps_the_reason_a_connection_failed(
-        self, ssh: str, home: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Its ssh.exe prints a refused connection only at the default log level."""
-        monkeypatch.setattr(sys, "platform", "win32")
-
-        assert not any(option.startswith("LogLevel=") for option in ssh_argv(cfg(), "ls", None))
-
     def test_other_platforms_leave_it_alone(
         self, ssh: str, home: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(sys, "platform", "linux")
 
         assert "ControlMaster=no" not in ssh_argv(cfg(), "ls", None)
+
+    @pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
+    @pytest.mark.parametrize("policy", ["auto", "strict"])
+    def test_ssh_keeps_the_reason_a_connection_failed(
+        self, ssh: str, home: Path, monkeypatch: pytest.MonkeyPatch, platform: str, policy: str
+    ) -> None:
+        """ssh prints a closed or refused connection only at its default log level."""
+        monkeypatch.setattr(sys, "platform", platform)
+
+        argv = ssh_argv(cfg(host_key_policy=policy), "ls", None)
+
+        assert not any(option.startswith("LogLevel=") for option in argv)
 
     def test_no_ssh_client(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(remote, "openssh", lambda tool: None)
@@ -313,6 +315,17 @@ class TestExplain:
 
         assert failure == Failure(
             "ssh to h failed: kex_exchange_identification: read: reset", False
+        )
+
+    def test_the_new_host_key_notice_is_never_the_reason(self) -> None:
+        added = "Warning: Permanently added 'bench-1' (ED25519) to the list of known hosts.\r\n"
+
+        assert explain(added, "h") == Failure("ssh to h failed.", False)
+        assert explain(added + "Connection closed by 10.0.0.5 port 22\r\n", "h") == Failure(
+            "ssh to h failed: Connection closed by 10.0.0.5 port 22", False
+        )
+        assert explain("Connection reset by 10.0.0.5 port 22\n" + added, "h") == Failure(
+            "ssh to h failed: Connection reset by 10.0.0.5 port 22", False
         )
 
     def test_no_output_at_all(self) -> None:

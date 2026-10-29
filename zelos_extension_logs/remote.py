@@ -98,9 +98,6 @@ def ssh_argv(cfg: SourceConfig, remote_command: str, access_key: Path | None) ->
             f"UserKnownHostsFile={os.devnull}",
             f"GlobalKnownHostsFile={os.devnull}",
         ]
-        # Quiets the new-host-key warning; on Windows it would also hide why a connection failed.
-        if sys.platform != "win32":
-            options.append("LogLevel=ERROR")
     else:
         options.append("StrictHostKeyChecking=yes")
     if sys.platform == "win32":
@@ -335,6 +332,8 @@ _FAILURES: tuple[tuple[tuple[str, ...], str, bool], ...] = (
         False,
     ),
 )
+# The notice ssh prints on every connection under Trust any key, which is never the reason.
+_ADDED = "permanently added"
 # The name ssh keeps the key under, with the port when it is not 22: `[bench-1]:2222`.
 _CHANGED = re.compile(r"Host key for (\S+) has changed")
 
@@ -348,5 +347,6 @@ def explain(stderr: str, host: str) -> Failure:
             known = m[1] if m else host.rpartition("@")[2]
             remove = f"ssh-keygen -R {shlex.quote(known)}"
             return Failure(message.format(host=host, remove=remove), lasting)
-    last = next((line.strip() for line in reversed(stderr.splitlines()) if line.strip()), "")
+    lines = (line.strip() for line in reversed(stderr.splitlines()))
+    last = next((line for line in lines if line and _ADDED not in line.lower()), "")
     return Failure(f"ssh to {host} failed: {last}" if last else f"ssh to {host} failed.", False)
