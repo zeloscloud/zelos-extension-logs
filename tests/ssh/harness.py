@@ -1,12 +1,13 @@
 """Docker boards, SSH keys and a running agent, for tests that read logs over a real ssh."""
 
+import contextlib
 import re
 import shlex
 import socket
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -89,6 +90,27 @@ def free_port() -> int:
     with socket.socket() as probe:
         probe.bind((LOOPBACK, 0))
         return probe.getsockname()[1]
+
+
+@contextlib.contextmanager
+def closing_port() -> Iterator[int]:
+    """A port whose server ends each connection before it greets ssh."""
+    with socket.socket() as server:
+        server.bind((LOOPBACK, 0))
+        server.listen()
+
+        def close_each() -> None:
+            with contextlib.suppress(OSError):
+                while True:
+                    connection, _ = server.accept()
+                    # An orderly close: closing with ssh's greeting unread would reset it instead.
+                    with connection:
+                        connection.shutdown(socket.SHUT_WR)
+                        while connection.recv(4096):
+                            pass
+
+        threading.Thread(target=close_each, daemon=True).start()
+        yield server.getsockname()[1]
 
 
 @dataclass

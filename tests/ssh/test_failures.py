@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from harness import LOOPBACK, Board, Run, free_port, notes, ssh_source
+from harness import LOOPBACK, Board, Run, closing_port, free_port, notes, ssh_source
 
 from zelos_extension_logs import actions, keys
 
@@ -51,6 +51,16 @@ def test_a_port_nothing_listens_on_is_reported_as_refused(
     found = failed(run, "refused the connection")
 
     assert "refused the connection" in str(found[0]["message"])
+
+
+def test_a_server_that_closes_the_connection_is_quoted(
+    agent: Callable[..., Run], key: Path
+) -> None:
+    with closing_port() as port:
+        run = agent([ssh_source(port, key)])
+        found = failed(run, "connection closed")
+
+    assert f"Connection closed by {LOOPBACK} port {port}" in str(found[0]["message"])
 
 
 def test_a_strict_host_key_check_refuses_a_board_it_does_not_know(
