@@ -9,6 +9,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Needs Zelos 26.0.10 or later.
 
+### Fixed
+
+- An action that fails, such as Test Connection to a device that refuses the login, shows as a failed run with its reason. Before, it showed as a completed run whose result held `status: error`.
+
 ## [0.1.1] - 2026-10-23
 
 ### Added

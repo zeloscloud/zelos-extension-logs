@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 import pytest
 from harness import LOOPBACK, WAIT_S, Board, Boards, Run, notes, numbers
+from zelos_sdk.actions.types import ActionExecutionError
 
 from tests.conftest import run as run_action
 
@@ -120,10 +121,10 @@ def test_run_command_ends_what_it_started_on_the_board_at_its_timeout(
     def tails() -> list[str]:
         return [line for line in board.readers(path) if path in line]
 
-    result = run_action("run_command", command=f"tail -f {path}", timeout_s=1.0)
+    with pytest.raises(ActionExecutionError, match="The command did not finish in 1 s."):
+        run_action("run_command", command=f"tail -f {path}", timeout_s=1.0)
     deadline = time.monotonic() + WAIT_S
     while tails() and time.monotonic() < deadline:
         time.sleep(0.2)
 
-    assert result == {"status": "error", "message": "The command did not finish in 1 s."}
     assert tails() == []
