@@ -11,7 +11,7 @@ from typing import Any
 
 from zelos_log_lines import files
 from zelos_log_lines.placing import Timing
-from zelos_sdk.actions import SelectField, action, register_field_type
+from zelos_sdk.actions import action
 
 from . import ACTION_PREFIX, keys, probe, remote, sshconfig
 from .config import YEARS, SourceConfig, host_problem, source, start_ns, zone
@@ -36,24 +36,8 @@ def data_dir() -> Path | None:
     return Path(value) if value else None
 
 
-def _first_source() -> str | None:
-    return next(iter(workers), None)
-
-
-@register_field_type("logs_source")
-class _SourceField(SelectField):
-    """A source name field whose form default is the first configured source."""
-
-    def to_json_schema(self, current_values: dict[str, Any] | None = None) -> dict[str, Any]:
-        schema = super().to_json_schema(current_values)
-        # The SDK's `default` is fixed at import; the sources are known only once the app runs.
-        schema["default"] = _first_source()
-        return schema
-
-
-_source = action.input(
+_source = action.select(
     "source",
-    type="logs_source",
     title="Source name",
     choices=lambda *_: sorted(workers),
     required=False,
@@ -383,9 +367,14 @@ def sample(source: str | None = None, lines: int = 50) -> dict[str, Any]:
 
 
 def _worker(name: str | None) -> SourceWorker:
-    name = name or _first_source()
-    if name is None:
-        raise RuntimeError("No sources are running. Start the extension.")
+    """The named source's worker; unset, the only one."""
+    if not name:
+        if not workers:
+            raise RuntimeError("No sources are running. Start the extension.")
+        if len(workers) > 1:
+            names = ", ".join(sorted(workers))
+            raise ValueError(f"Several sources are running; set source to one of: {names}.")
+        return next(iter(workers.values()))
     worker = workers.get(name)
     if worker is None:
         known = ", ".join(sorted(workers)) or "none"

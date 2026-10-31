@@ -550,13 +550,15 @@ class TestRunCommand:
             "truncated": False,
         }
 
-    def test_the_first_source_is_the_default_and_a_name_picks_another(
-        self, add_worker: Callable[..., SourceWorker], monkeypatch: pytest.MonkeyPatch
+    def test_with_several_sources_a_name_picks_one(
+        self, add_worker: Callable[..., SourceWorker]
     ) -> None:
         add_worker({"connection": "demo", "name": "demo-1"})
         add_worker({"connection": "local", "name": "dev"})
 
-        assert fails("run_command", command="echo hi") == "The demo device runs no commands."
+        assert fails("run_command", command="echo hi") == (
+            "Several sources are running; set source to one of: demo-1, dev."
+        )
         assert run("run_command", source="dev", command="echo hi")["output"] == ["hi"]
 
     def test_the_exit_code_and_what_was_printed(
@@ -767,11 +769,16 @@ class TestGetState:
             "errors", "signals",
         }  # fmt: skip
 
-    def test_the_first_source_is_the_default(self, add_worker: Callable[..., SourceWorker]) -> None:
+    def test_the_only_source_when_the_call_names_none(
+        self, add_worker: Callable[..., SourceWorker]
+    ) -> None:
         add_worker({"connection": "local", "name": "first"})
-        add_worker({"connection": "demo", "name": "second"})
-
         assert run("get_state")["name"] == "first"
+
+        add_worker({"connection": "demo", "name": "second"})
+        assert fails("get_state") == (
+            "Several sources are running; set source to one of: first, second."
+        )
         assert run("get_state", source="second")["name"] == "second"
 
     def test_is_read_only_and_needs_the_running_extension(self) -> None:
@@ -830,17 +837,17 @@ class TestSample:
             run("sample", lines=lines)
 
 
-def test_the_source_field_defaults_to_the_first_source(
+def test_the_source_field_is_optional_and_picks_no_source_for_the_caller(
     add_worker: Callable[..., SourceWorker],
 ) -> None:
-    assert actions.get_state._action.to_schema()["properties"]["source"]["default"] is None
     add_worker({"connection": "local", "name": "first"})
     add_worker({"connection": "demo", "name": "second"})
 
-    schema = actions.get_state._action.to_schema()["properties"]["source"]
-
-    assert schema["default"] == "first"
-    assert schema["enum"] == ["first", "second"]
+    for name in ("run_command", "get_state", "sample"):
+        schema = getattr(actions, name)._action.to_schema()
+        assert "source" not in schema.get("required", []), name
+        assert schema["properties"]["source"].get("default") is None, name
+        assert schema["properties"]["source"]["enum"] == ["first", "second"], name
 
 
 def test_which_actions_run_without_the_extension() -> None:
