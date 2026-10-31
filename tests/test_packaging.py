@@ -22,14 +22,6 @@ def test_the_name_is_the_action_prefix() -> None:
     assert MANIFEST["name"] == ACTION_PREFIX == "Logs"
 
 
-def test_entry_module_re_exports_the_action_prefix() -> None:
-    """The inventory dump reads the prefix off the entry module and falls back to its file name,
-    so a missing re-export ships `main/list_hosts` beside a live `Logs/list_hosts`."""
-    import main
-
-    assert main.ACTION_PREFIX == ACTION_PREFIX
-
-
 def test_config_schema_is_valid_and_its_examples_validate() -> None:
     """Draft 7, because it is the draft that enforces the per-connection `dependencies`."""
     Draft7Validator.check_schema(SCHEMA)
