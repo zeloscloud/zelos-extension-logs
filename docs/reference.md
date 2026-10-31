@@ -141,7 +141,7 @@ On **This computer**, System log reads the journal or syslog on Linux, the unifi
 
 ## Actions
 
-Every action except List Hosts, Auto-configure, Test Connection, Show Access Key and Convert Log File takes `source`, the source's **Name**. Leave it out to act on the first source.
+Every action except List Hosts, Auto-configure, Test Connection, Show Access Key and Convert Log File takes `source`, the source's **Name**. Leave it out when only one source runs; with several, the action fails and names them.
 
 | Action | What it does | Read-only |
 |---|---|---|
