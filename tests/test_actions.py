@@ -20,6 +20,13 @@ PROBE = (
 )
 
 
+def fails(name: str, **params: Any) -> str:
+    """The message the caller sees when the action, run as the agent runs it, fails."""
+    with pytest.raises(ActionExecutionError) as raised:
+        run(name, **params)
+    return str(raised.value)
+
+
 @pytest.fixture(autouse=True)
 def no_workers() -> Iterator[None]:
     actions.workers.clear()
@@ -192,10 +199,7 @@ class TestShowAccessKey:
     def test_without_a_data_directory(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("ZELOS_DATA_DIR", raising=False)
 
-        assert run("show_access_key") == {
-            "status": "error",
-            "message": "The extension has no data directory to keep a key in.",
-        }
+        assert fails("show_access_key") == "The extension has no data directory to keep a key in."
 
     def test_a_key_that_cannot_be_made(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -207,10 +211,7 @@ class TestShowAccessKey:
 
         monkeypatch.setattr(keys, "ensure", fail)
 
-        assert run("show_access_key") == {
-            "status": "error",
-            "message": "ssh-keygen is not installed on this computer.",
-        }
+        assert fails("show_access_key") == "ssh-keygen is not installed on this computer."
 
 
 class Capture:
@@ -245,6 +246,12 @@ class TestTestConnection:
     ) -> Any:
         monkeypatch.setattr(remote, "run", capture)
         return run("test_connection", host=host)
+
+    def refused(
+        self, monkeypatch: pytest.MonkeyPatch, capture: Capture, host: str = "root@bench-1"
+    ) -> str:
+        monkeypatch.setattr(remote, "run", capture)
+        return fails("test_connection", host=host)
 
     @pytest.mark.usefixtures("ssh")
     def test_a_board_with_a_journal(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -300,43 +307,33 @@ class TestTestConnection:
 
     @pytest.mark.usefixtures("ssh")
     def test_a_board_with_no_log(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        result = self.connect(monkeypatch, Capture(PROBE.replace("systemd=252\n", "")))
+        message = self.refused(monkeypatch, Capture(PROBE.replace("systemd=252\n", "")))
 
-        assert result == {
-            "status": "error",
-            "message": "Connected to root@bench-1, but it has no system log: no journal, logread "
-            "or readable syslog file. Set Log to A file or A command's output.",
-        }
+        assert message == (
+            "Connected to root@bench-1, but it has no system log: no journal, logread "
+            "or readable syslog file. Set Log to A file or A command's output."
+        )
 
     @pytest.mark.usefixtures("ssh")
     def test_a_refused_login(self, monkeypatch: pytest.MonkeyPatch) -> None:
         capture = Capture("", "root@bench-1: Permission denied (publickey).", 255)
 
-        result = self.connect(monkeypatch, capture)
-
-        assert result == {
-            "status": "error",
-            "message": "root@bench-1 refused the login. Run Show Access Key and add its line to "
-            "the device, or set Key file.",
-        }
+        assert self.refused(monkeypatch, capture) == (
+            "root@bench-1 refused the login. Run Show Access Key and add its line to "
+            "the device, or set Key file."
+        )
 
     @pytest.mark.usefixtures("ssh")
     def test_no_answer_in_time(self, monkeypatch: pytest.MonkeyPatch) -> None:
         capture = Capture(times_out=True)
 
-        assert self.connect(monkeypatch, capture) == {
-            "status": "error",
-            "message": "root@bench-1 did not answer in time.",
-        }
+        assert self.refused(monkeypatch, capture) == "root@bench-1 did not answer in time."
 
     def test_no_ssh_client(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(remote, "openssh", lambda tool: None)
         capture = Capture(PROBE)
 
-        assert self.connect(monkeypatch, capture) == {
-            "status": "error",
-            "message": str(remote.SshMissing()),
-        }
+        assert self.refused(monkeypatch, capture) == str(remote.SshMissing())
         assert capture.calls == []
 
     @pytest.mark.usefixtures("ssh")
@@ -354,9 +351,7 @@ class TestTestConnection:
     ) -> None:
         capture = Capture(PROBE)
 
-        result = self.connect(monkeypatch, capture, host)
-
-        assert result == {"status": "error", "message": message}
+        assert self.refused(monkeypatch, capture, host) == message
         assert capture.calls == []
 
     @pytest.mark.usefixtures("ssh", "home")
@@ -390,12 +385,9 @@ class TestTestConnection:
         capture = Capture(PROBE)
         monkeypatch.setattr(remote, "run", capture)
 
-        result = run("test_connection", host="root@bench-1", ssh_options='-o "ProxyCommand x')
-
-        assert result == {
-            "status": "error",
-            "message": "Extra ssh options: a quote is not closed.",
-        }
+        assert fails("test_connection", host="root@bench-1", ssh_options='-o "ProxyCommand x') == (
+            "Extra ssh options: a quote is not closed."
+        )
         assert capture.calls == []
 
     @pytest.mark.usefixtures("ssh")
@@ -520,10 +512,9 @@ def python(code: str) -> str:
 
 class TestRunCommand:
     def test_no_workers(self) -> None:
-        assert run("run_command", command="echo hi") == {
-            "status": "error",
-            "message": "No sources are running. Start the extension.",
-        }
+        assert fails("run_command", command="echo hi") == (
+            "No sources are running. Start the extension."
+        )
 
     def test_an_unknown_name_names_the_known_ones(
         self, add_worker: Callable[..., SourceWorker]
@@ -531,10 +522,10 @@ class TestRunCommand:
         add_worker({"connection": "local", "name": "dev-2"})
         add_worker({"connection": "demo", "name": "demo-1"})
 
-        assert actions.run_command("nope", command="echo hi") == {
-            "status": "error",
-            "message": "No source named 'nope'. Sources: demo-1, dev-2.",
-        }
+        with pytest.raises(
+            ValueError, match=r"^No source named 'nope'\. Sources: demo-1, dev-2\.$"
+        ):
+            actions.run_command("nope", command="echo hi")
 
     def test_the_sdk_refuses_an_unknown_name_before_the_action_runs(
         self, add_worker: Callable[..., SourceWorker]
@@ -547,10 +538,7 @@ class TestRunCommand:
     def test_the_demo_runs_no_commands(self, add_worker: Callable[..., SourceWorker]) -> None:
         add_worker({"connection": "demo"})
 
-        assert run("run_command", command="echo hi") == {
-            "status": "error",
-            "message": "The demo device runs no commands.",
-        }
+        assert fails("run_command", command="echo hi") == "The demo device runs no commands."
 
     def test_a_local_worker_runs_echo_hi(self, add_worker: Callable[..., SourceWorker]) -> None:
         add_worker({"connection": "local", "name": "dev"})
@@ -568,9 +556,7 @@ class TestRunCommand:
         add_worker({"connection": "demo", "name": "demo-1"})
         add_worker({"connection": "local", "name": "dev"})
 
-        assert (
-            run("run_command", command="echo hi")["message"] == "The demo device runs no commands."
-        )
+        assert fails("run_command", command="echo hi") == "The demo device runs no commands."
         assert run("run_command", source="dev", command="echo hi")["output"] == ["hi"]
 
     def test_the_exit_code_and_what_was_printed(
@@ -656,9 +642,11 @@ class TestRunCommand:
     def test_a_command_that_runs_too_long(self, add_worker: Callable[..., SourceWorker]) -> None:
         add_worker({"connection": "local", "name": "dev"})
 
-        result = run("run_command", command=python("import time; time.sleep(30)"), timeout_s=1.0)
+        command = python("import time; time.sleep(30)")
 
-        assert result == {"status": "error", "message": "The command did not finish in 1 s."}
+        assert fails("run_command", command=command, timeout_s=1.0) == (
+            "The command did not finish in 1 s."
+        )
 
     @pytest.mark.skipif(sys.platform == "win32", reason="pgrep")
     def test_a_command_that_runs_too_long_leaves_nothing_running(
@@ -667,7 +655,7 @@ class TestRunCommand:
         add_worker({"connection": "local", "name": "dev"})
         marker = f"sleep 30.{os.getpid()}"
 
-        run("run_command", command=f"{marker}; echo done", timeout_s=1.0)
+        fails("run_command", command=f"{marker}; echo done", timeout_s=1.0)
         running = subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True)
         subprocess.run(["pkill", "-f", marker], check=False)
 
@@ -680,10 +668,8 @@ class TestRunCommand:
         add_worker({"connection": "local", "name": "dev"})
 
         # The SDK's own range check comes first when run as the agent runs it.
-        assert actions.run_command(command="echo hi", timeout_s=timeout_s) == {
-            "status": "error",
-            "message": "timeout_s must be 1.0 to 120.0.",
-        }
+        with pytest.raises(ValueError, match=r"^timeout_s must be 1\.0 to 120\.0\.$"):
+            actions.run_command(command="echo hi", timeout_s=timeout_s)
         with pytest.raises(ValidationError):
             run("run_command", command="echo hi", timeout_s=timeout_s)
 
@@ -718,10 +704,9 @@ class TestRunCommand:
             Capture("", "ssh: connect to host bench-1: Connection refused", 255),
         )
 
-        assert run("run_command", command="uname") == {
-            "status": "error",
-            "message": "root@bench-1 refused the connection. Check that an SSH server runs there.",
-        }
+        assert fails("run_command", command="uname") == (
+            "root@bench-1 refused the connection. Check that an SSH server runs there."
+        )
 
     @pytest.mark.usefixtures("ssh")
     def test_over_ssh_the_commands_own_255_is_taken_for_a_connection_failure(
@@ -730,7 +715,7 @@ class TestRunCommand:
         add_worker({"connection": "ssh", "host": "root@bench-1", "name": "bench-1"})
         monkeypatch.setattr(remote, "run", Capture("", "", 255))
 
-        assert run("run_command", command="exit 255")["status"] == "error"
+        assert fails("run_command", command="exit 255")
 
     def test_over_ssh_with_no_client(
         self, add_worker: Callable[..., SourceWorker], monkeypatch: pytest.MonkeyPatch
@@ -738,10 +723,7 @@ class TestRunCommand:
         add_worker({"connection": "ssh", "host": "root@bench-1", "name": "bench-1"})
         monkeypatch.setattr(remote, "openssh", lambda tool: None)
 
-        assert run("run_command", command="uname") == {
-            "status": "error",
-            "message": str(remote.SshMissing()),
-        }
+        assert fails("run_command", command="uname") == str(remote.SshMissing())
 
     def test_is_not_read_only(self) -> None:
         action = actions.run_command._action
@@ -752,18 +734,13 @@ class TestRunCommand:
 
 class TestGetState:
     def test_no_workers(self) -> None:
-        assert run("get_state") == {
-            "status": "error",
-            "message": "No sources are running. Start the extension.",
-        }
+        assert fails("get_state") == "No sources are running. Start the extension."
 
     def test_an_unknown_name(self, add_worker: Callable[..., SourceWorker]) -> None:
         add_worker({"connection": "local", "name": "dev"})
 
-        assert actions.get_state("nope") == {
-            "status": "error",
-            "message": "No source named 'nope'. Sources: dev.",
-        }
+        with pytest.raises(ValueError, match=r"^No source named 'nope'\. Sources: dev\.$"):
+            actions.get_state("nope")
 
     def test_a_workers_fields(self, add_worker: Callable[..., SourceWorker]) -> None:
         add_worker(
@@ -837,22 +814,18 @@ class TestSample:
         assert run("sample") == {"status": "success", "lines": []}
 
     def test_no_workers(self) -> None:
-        assert run("sample")["message"] == "No sources are running. Start the extension."
+        assert fails("sample") == "No sources are running. Start the extension."
 
     def test_an_unknown_name(self, add_worker: Callable[..., SourceWorker]) -> None:
         add_worker({"connection": "local", "name": "dev"})
 
-        assert actions.sample("nope") == {
-            "status": "error",
-            "message": "No source named 'nope'. Sources: dev.",
-        }
+        with pytest.raises(ValueError, match=r"^No source named 'nope'\. Sources: dev\.$"):
+            actions.sample("nope")
 
     @pytest.mark.parametrize("lines", [0, -1, 1001])
     def test_a_count_out_of_range(self, lines: int) -> None:
-        assert actions.sample(lines=lines) == {
-            "status": "error",
-            "message": "lines must be 1 to 1000.",
-        }
+        with pytest.raises(ValueError, match=r"^lines must be 1 to 1000\.$"):
+            actions.sample(lines=lines)
         with pytest.raises(ValidationError):
             run("sample", lines=lines)
 
