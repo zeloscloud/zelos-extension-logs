@@ -715,7 +715,7 @@ requires-dist = [
     { name = "platformdirs", marker = "sys_platform == 'win32'", specifier = ">=4" },
     { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "zelos-log-lines", specifier = ">=0.1.3,<0.2" },
-    { name = "zelos-sdk", specifier = ">=0.0.13a1,<0.1" },
+    { name = "zelos-sdk", specifier = ">=0.0.13a1" },
 ]
 
 [package.metadata.requires-dev]

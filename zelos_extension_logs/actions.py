@@ -1,4 +1,7 @@
-"""What the Action panel, notebooks and Zelos AI can do with the sources."""
+"""What the Action panel, notebooks and Zelos AI can do with the sources.
+
+A failure raises with its reason: the caller sees a failed run only for an exception.
+"""
 
 import os
 import subprocess
@@ -8,7 +11,7 @@ from typing import Any
 
 from zelos_log_lines import files
 from zelos_log_lines.placing import Timing
-from zelos_sdk.actions import SelectField, action, register_field_type
+from zelos_sdk.actions import action
 
 from . import ACTION_PREFIX, keys, probe, remote, sshconfig
 from .config import YEARS, SourceConfig, host_problem, source, start_ns, zone
@@ -33,24 +36,8 @@ def data_dir() -> Path | None:
     return Path(value) if value else None
 
 
-def _first_source() -> str | None:
-    return next(iter(workers), None)
-
-
-@register_field_type("logs_source")
-class _SourceField(SelectField):
-    """A source name field whose form default is the first configured source."""
-
-    def to_json_schema(self, current_values: dict[str, Any] | None = None) -> dict[str, Any]:
-        schema = super().to_json_schema(current_values)
-        # The SDK's `default` is fixed at import; the sources are known only once the app runs.
-        schema["default"] = _first_source()
-        return schema
-
-
-_source = action.input(
+_source = action.select(
     "source",
-    type="logs_source",
     title="Source name",
     choices=lambda *_: sorted(workers),
     required=False,
@@ -164,7 +151,7 @@ def test_connection(
     ssh_options: str = "",
 ) -> dict[str, Any]:
     if problem := host_problem(host):
-        return {"status": "error", "message": f"Address: {problem}."}
+        raise ValueError(f"Address: {problem}.")
     advanced = {
         "ssh_port": ssh_port,
         "key_path": key_path,
@@ -174,31 +161,27 @@ def test_connection(
     try:
         cfg = source({"connection": "ssh", "host": host, "advanced": advanced})
     except ValueError:
-        return {"status": "error", "message": "Extra ssh options: a quote is not closed."}
+        raise ValueError("Extra ssh options: a quote is not closed.") from None
     return _test(cfg)
 
 
 def _test(cfg: SourceConfig) -> dict[str, Any]:
-    try:
-        argv = remote.ssh_argv(cfg, probe.SCRIPT, keys.path(data_dir()))
-    except remote.SshMissing as e:
-        return {"status": "error", "message": str(e)}
+    argv = remote.ssh_argv(cfg, probe.SCRIPT, keys.path(data_dir()))
     done = remote.run(argv, timeout=probe.TIMEOUT_S)
     if done is None:
-        return {"status": "error", "message": f"{cfg.host} did not answer in time."}
+        raise TimeoutError(f"{cfg.host} did not answer in time.")
     try:
         board = probe.parse(done.stdout.decode("utf-8", "replace"), time.time_ns())
     except probe.Truncated:
         failure = remote.explain(done.stderr.decode("utf-8", "replace"), cfg.host or "")
-        return {"status": "error", "message": failure.message}
+        raise RuntimeError(failure.message) from None
     try:
         log = probe.system_log(board, None, "new")
     except probe.NoLog:
-        return {
-            "status": "error",
-            "message": f"Connected to {cfg.host}, but it has no system log: no journal, logread or "
-            "readable syslog file. Set Log to A file or A command's output.",
-        }
+        raise RuntimeError(
+            f"Connected to {cfg.host}, but it has no system log: no journal, logread or "
+            "readable syslog file. Set Log to A file or A command's output."
+        ) from None
     reads = {
         "journal": f"the journal (systemd {board.systemd})",
         "logread": "BusyBox's logread",
@@ -217,10 +200,7 @@ def _test(cfg: SourceConfig) -> dict[str, Any]:
     standalone=True,
 )
 def show_access_key() -> dict[str, Any]:
-    try:
-        key = keys.ensure(data_dir())
-    except keys.KeyFailure as e:
-        return {"status": "error", "message": str(e)}
+    key = keys.ensure(data_dir())
     public_key = keys.public(key)
     return {
         "status": "success",
@@ -291,7 +271,6 @@ def convert_log_file(
     year: int | None = None,
     start_time: str = "",
 ) -> dict[str, Any]:
-    # A failure raises: a standalone action's exit status is how its caller learns of it.
     path = Path(input_file).expanduser()
     output, lines = files.convert(
         path,
@@ -327,25 +306,16 @@ def run_command(
     source: str | None = None, *, command: str, timeout_s: float = 10.0
 ) -> dict[str, Any]:
     if not _MIN_COMMAND_S <= timeout_s <= _MAX_COMMAND_S:
-        return {
-            "status": "error",
-            "message": f"timeout_s must be {_MIN_COMMAND_S} to {_MAX_COMMAND_S}.",
-        }
-    worker = _worker(source)
-    if isinstance(worker, dict):
-        return worker
-    cfg = worker.cfg
+        raise ValueError(f"timeout_s must be {_MIN_COMMAND_S} to {_MAX_COMMAND_S}.")
+    cfg = _worker(source).cfg
     if cfg.connection == "demo":
-        return {"status": "error", "message": "The demo device runs no commands."}
+        raise ValueError("The demo device runs no commands.")
     ssh = cfg.connection == "ssh"
-    try:
-        argv = (
-            remote.ssh_argv(cfg, remote.wrap(command), keys.path(data_dir()))
-            if ssh
-            else remote.local_argv(command)
-        )
-    except remote.SshMissing as e:
-        return {"status": "error", "message": str(e)}
+    argv = (
+        remote.ssh_argv(cfg, remote.wrap(command), keys.path(data_dir()))
+        if ssh
+        else remote.local_argv(command)
+    )
     done = remote.run(
         argv,
         timeout=timeout_s,
@@ -353,10 +323,10 @@ def run_command(
         stderr=subprocess.PIPE if ssh else subprocess.STDOUT,
     )
     if done is None:
-        return {"status": "error", "message": f"The command did not finish in {timeout_s:g} s."}
+        raise TimeoutError(f"The command did not finish in {timeout_s:g} s.")
     if ssh and done.returncode == 255:
         failure = remote.explain(done.stderr.decode("utf-8", "replace"), cfg.host or "")
-        return {"status": "error", "message": failure.message}
+        raise RuntimeError(failure.message)
     output = done.stdout.decode("utf-8", "replace").splitlines()
     if done.cut:
         # The first line kept is the end of a longer one.
@@ -378,10 +348,7 @@ def run_command(
 )
 @_source
 def get_state(source: str | None = None) -> dict[str, Any]:
-    worker = _worker(source)
-    if isinstance(worker, dict):
-        return worker
-    return {"status": "success", **state_of(worker)}
+    return {"status": "success", **state_of(_worker(source))}
 
 
 @action(
@@ -395,19 +362,21 @@ def get_state(source: str | None = None) -> dict[str, Any]:
 @action.integer("lines", title="Lines", minimum=1, maximum=_MAX_LINES, required=False, default=50)
 def sample(source: str | None = None, lines: int = 50) -> dict[str, Any]:
     if not 1 <= lines <= _MAX_LINES:
-        return {"status": "error", "message": f"lines must be 1 to {_MAX_LINES}."}
-    worker = _worker(source)
-    if isinstance(worker, dict):
-        return worker
-    return {"status": "success", "lines": worker.sample()[-lines:]}
+        raise ValueError(f"lines must be 1 to {_MAX_LINES}.")
+    return {"status": "success", "lines": _worker(source).sample()[-lines:]}
 
 
-def _worker(name: str | None) -> SourceWorker | dict[str, Any]:
-    name = name or _first_source()
-    if name is None:
-        return {"status": "error", "message": "No sources are running. Start the extension."}
+def _worker(name: str | None) -> SourceWorker:
+    """The named source's worker; unset, the only one."""
+    if not name:
+        if not workers:
+            raise RuntimeError("No sources are running. Start the extension.")
+        if len(workers) > 1:
+            names = ", ".join(sorted(workers))
+            raise ValueError(f"Several sources are running; set source to one of: {names}.")
+        return next(iter(workers.values()))
     worker = workers.get(name)
     if worker is None:
         known = ", ".join(sorted(workers)) or "none"
-        return {"status": "error", "message": f"No source named '{name}'. Sources: {known}."}
+        raise ValueError(f"No source named '{name}'. Sources: {known}.")
     return worker

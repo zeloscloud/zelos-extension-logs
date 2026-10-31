@@ -3,6 +3,17 @@
 All notable changes to this extension are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the extension uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Needs Zelos 26.0.10 or later.
+
+### Fixed
+
+- An action that fails, such as Test Connection to a device that refuses the login, shows as a failed run with its reason. Before, it showed as a completed run whose result held `status: error`.
+- Run Command, Get State and Sample without a source act on the only source. With several sources they fail and name them, instead of acting on the first one, and the action form no longer preselects the first source.
+
 ## [0.1.1] - 2026-10-23
 
 ### Added
