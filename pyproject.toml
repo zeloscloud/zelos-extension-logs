@@ -7,7 +7,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 keywords = ["zelos", "extension", "logs", "journald", "syslog", "ssh", "macos", "windows"]
 dependencies = [
-    "zelos-sdk>=0.0.13a1",
+    "zelos-sdk>=0.0.13",
     "zelos-log-lines>=0.1.3,<0.2",
     "jsonschema>=4",
     # zoneinfo reads IANA zones from the system, and Windows has none.
